@@ -47,6 +47,20 @@ jobs:
         working-directory: app
         run: npm run tauri android init
 
+      - name: Patch AndroidManifest for Auto-Backup
+        working-directory: app/src-tauri/gen/android/app/src/main
+        run: |
+          sed -i '/<uses-permission android:name="android.permission.INTERNET"/a \
+          <uses-permission android:name="android.permission.FOREGROUND_SERVICE" \/>\n\
+          <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" \/>\n\
+          <uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/>\n\
+          <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" \/>\n\
+          <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" \/>\n\
+          <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" \/>' AndroidManifest.xml
+          
+          sed -i '/<\/application>/i \
+          <service android:name=".AutoBackupService" android:foregroundServiceType="dataSync" android:exported="false" \/>' AndroidManifest.xml
+
       - name: Build Android APK
         working-directory: app
         run: npm run tauri android build

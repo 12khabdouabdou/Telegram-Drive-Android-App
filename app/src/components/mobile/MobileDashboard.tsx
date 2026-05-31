@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, ChevronDown } from 'lucide-react';
+import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, ChevronDown, Cloud } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-shell';
 import { useQuery } from '@tanstack/react-query';
@@ -259,6 +259,92 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${settings.zipFolders ? 'translate-x-5' : 'translate-x-0'}`} />
                 </button>
               </div>
+            </div>
+
+            {/* Auto-Backup Configuration */}
+            <div className="p-4 rounded-2xl bg-telegram-hover/20 border border-telegram-border/30 space-y-4">
+              <h3 className="text-sm font-bold text-telegram-primary tracking-wide uppercase text-[10px] flex items-center gap-1.5">
+                <Cloud className="w-3 h-3" />
+                Auto-Backup
+              </h3>
+              
+              <div className="flex items-center justify-between py-2">
+                <div>
+                  <p className="text-xs font-medium">Enable Auto-Backup</p>
+                  <p className="text-[10px] text-telegram-subtext">Automatically backup photos and videos</p>
+                </div>
+                <button
+                  onClick={() => updateSetting('autoBackupEnabled', !settings.autoBackupEnabled)}
+                  className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${settings.autoBackupEnabled ? 'bg-telegram-primary' : 'bg-telegram-border'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${settings.autoBackupEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+
+              {settings.autoBackupEnabled && (
+                <div className="space-y-4 pt-2 border-t border-telegram-border/30 mt-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Destination Folder</label>
+                    <input
+                      type="text"
+                      value={settings.autoBackupDestination}
+                      onChange={(e) => updateSetting('autoBackupDestination', e.target.value)}
+                      className="w-full bg-telegram-bg border border-telegram-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-telegram-primary"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Backup Mode</label>
+                    <select
+                      value={settings.autoBackupMode}
+                      onChange={(e) => updateSetting('autoBackupMode', e.target.value as any)}
+                      className="w-full bg-telegram-bg border border-telegram-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-telegram-primary"
+                    >
+                      <option value="new">Only backup new files</option>
+                      <option value="all">Backup existing and new files</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <p className="text-xs font-medium">Wi-Fi Only</p>
+                      <p className="text-[10px] text-telegram-subtext">Pause backup on cellular data</p>
+                    </div>
+                    <button
+                      onClick={() => updateSetting('autoBackupWifiOnly', !settings.autoBackupWifiOnly)}
+                      className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${settings.autoBackupWifiOnly ? 'bg-telegram-primary' : 'bg-telegram-border'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${settings.autoBackupWifiOnly ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <p className="text-xs font-medium">Pause on Low Battery</p>
+                      <p className="text-[10px] text-telegram-subtext">Stop when battery is under 15%</p>
+                    </div>
+                    <button
+                      onClick={() => updateSetting('autoBackupBatterySafe', !settings.autoBackupBatterySafe)}
+                      className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${settings.autoBackupBatterySafe ? 'bg-telegram-primary' : 'bg-telegram-border'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${settings.autoBackupBatterySafe ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <p className="text-xs font-medium">Night-Time Only</p>
+                      <p className="text-[10px] text-telegram-subtext">Only backup between 2 AM and 6 AM</p>
+                    </div>
+                    <button
+                      onClick={() => updateSetting('autoBackupNightMode', !settings.autoBackupNightMode)}
+                      className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${settings.autoBackupNightMode ? 'bg-telegram-primary' : 'bg-telegram-border'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${settings.autoBackupNightMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Proxy Configuration */}

@@ -61,7 +61,14 @@ pub fn init_db(app: &AppHandle) -> Result<DbConnection, String> {
                     expires_at INTEGER,
                     revoked INTEGER NOT NULL DEFAULT 0,
                     created_at INTEGER NOT NULL
-                )"
+                );
+                CREATE TABLE IF NOT EXISTS auto_backups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_path TEXT UNIQUE NOT NULL,
+                    file_hash TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at INTEGER NOT NULL
+                );"
             ) {
                 Ok(_) => {
                     last_err.clear();

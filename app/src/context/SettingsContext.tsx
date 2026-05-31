@@ -37,6 +37,14 @@ export interface Settings {
     chunkSizeKb: number;             // 128, 256, 512
     keepAliveIntervalSec: number;    // 0 = disabled, 30–120
     autoDetectVpn: boolean;
+    // ── Auto Backup ───────────────────────────────────────
+    autoBackupEnabled: boolean;
+    autoBackupWifiOnly: boolean;
+    autoBackupBatterySafe: boolean;
+    autoBackupNightMode: boolean;
+    autoBackupDestination: string;
+    autoBackupMode: 'all' | 'new';
+    autoBackupFolders: string[];
 }
 
 const defaultSettings: Settings = {
@@ -73,6 +81,15 @@ const defaultSettings: Settings = {
     chunkSizeKb: 512,
     keepAliveIntervalSec: 0,
     autoDetectVpn: false,
+
+    // Auto Backup — off by default
+    autoBackupEnabled: false,
+    autoBackupWifiOnly: true,
+    autoBackupBatterySafe: true,
+    autoBackupNightMode: false,
+    autoBackupDestination: 'Auto-Backups',
+    autoBackupMode: 'new',
+    autoBackupFolders: ['DCIM/Camera', 'Pictures'],
 };
 
 interface SettingsContextType {
