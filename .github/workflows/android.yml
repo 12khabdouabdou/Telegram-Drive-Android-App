@@ -43,6 +43,10 @@ jobs:
         working-directory: app
         run: npm install
 
+      - name: Initialize Tauri Android
+        working-directory: app
+        run: npm run tauri android init
+
       - name: Build Android APK
         working-directory: app
         run: npm run tauri android build
