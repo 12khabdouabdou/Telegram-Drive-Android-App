@@ -4,15 +4,30 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.FileObserver
+import android.os.Environment
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import java.io.File
 
 class AutoBackupService : Service() {
     private val CHANNEL_ID = "AutoBackupChannel"
     private val NOTIFICATION_ID = 2
+    private val observers = mutableListOf<FileObserver>()
+
+    // Declare the native JNI function that communicates with our Rust backend
+    private external fun onFileDiscovered(filePath: String)
+
+    init {
+        try {
+            System.loadLibrary("app_lib") // The name of our Rust cdylib
+        } catch (e: Exception) {
+            Log.e("AutoBackupService", "Failed to load Rust library", e)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -22,18 +37,57 @@ class AutoBackupService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Telegram Drive Auto-Backup")
-            .setContentText("Monitoring for new files...")
-            // We'll use a standard Android icon for now, since we don't know the app icon name
+            .setContentText("Monitoring for new photos...")
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
         startForeground(NOTIFICATION_ID, notification)
         
-        // TODO: Implement FileObserver or WorkManager logic here to monitor directories.
-        // For now, this just keeps the service alive to fulfill the requested feature structure.
+        startWatchingDirectories()
 
         return START_STICKY
+    }
+
+    private fun startWatchingDirectories() {
+        // Stop any existing observers
+        observers.forEach { it.stopWatching() }
+        observers.clear()
+
+        // Standard folders to watch. In a full app, these come from Settings (Rust to Java)
+        val dcimCamera = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
+        val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+
+        val foldersToWatch = listOf(dcimCamera, pictures)
+
+        for (folder in foldersToWatch) {
+            if (folder.exists() && folder.isDirectory) {
+                // Using FileObserver to watch for new files (CREATE event)
+                val observer = object : FileObserver(folder.absolutePath, CREATE) {
+                    override fun onEvent(event: Int, path: String?) {
+                        if (path != null) {
+                            val fullPath = File(folder, path).absolutePath
+                            Log.i("AutoBackupService", "New file detected: \$fullPath")
+                            // Pass the newly discovered file path back to the Rust backend
+                            try {
+                                onFileDiscovered(fullPath)
+                            } catch (e: Exception) {
+                                Log.e("AutoBackupService", "Failed to call Rust JNI", e)
+                            }
+                        }
+                    }
+                }
+                observer.startWatching()
+                observers.add(observer)
+                Log.i("AutoBackupService", "Started watching folder: \${folder.absolutePath}")
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        observers.forEach { it.stopWatching() }
+        observers.clear()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -52,3 +106,4 @@ class AutoBackupService : Service() {
         }
     }
 }
+
