@@ -69,58 +69,60 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
     let mut env = vm.attach_current_thread()
         .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
-    let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };
+    let result: Result<String, String> = (|| {
+        let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };
+        let cleaned = clean_android_path(raw_path);
 
-    let cleaned = clean_android_path(raw_path);
+        let uri_class = env.find_class("android/net/Uri")
+            .map_err(|e| format!("Failed to find android/net/Uri: {}", e))?;
+        let j_cleaned = env.new_string(&cleaned)
+            .map_err(|e| format!("Failed to create Java string: {}", e))?;
+        let uri_val = env.call_static_method(
+            &uri_class,
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[jni::objects::JValue::from(&j_cleaned)],
+        ).map_err(|e| format!("Failed to parse URI: {}", e))?;
+        let uri = uri_val.l().map_err(|e| format!("URI result is not an object: {}", e))?;
 
-    let uri_class = env.find_class("android/net/Uri")
-        .map_err(|e| format!("Failed to find android/net/Uri: {}", e))?;
-    let j_cleaned = env.new_string(&cleaned)
-        .map_err(|e| format!("Failed to create Java string: {}", e))?;
-    let uri_val = env.call_static_method(
-        &uri_class,
-        "parse",
-        "(Ljava/lang/String;)Landroid/net/Uri;",
-        &[jni::objects::JValue::from(&j_cleaned)],
-    ).map_err(|e| format!("Failed to parse URI: {}", e))?;
-    let uri = uri_val.l().map_err(|e| format!("URI result is not an object: {}", e))?;
+        let content_resolver = env.call_method(
+            &ctx,
+            "getContentResolver",
+            "()Landroid/content/ContentResolver;",
+            &[],
+        ).map_err(|e| format!("Failed to get ContentResolver: {}", e))?.l()
+        .map_err(|e| format!("CR is not an object: {}", e))?;
 
-    let content_resolver = env.call_method(
-        &ctx,
-        "getContentResolver",
-        "()Landroid/content/ContentResolver;",
-        &[],
-    ).map_err(|e| format!("Failed to get ContentResolver: {}", e))?.l().unwrap();
-
-    let mut file_name = "upload.file".to_string();
-    if cleaned.starts_with("content://") {
-        let cursor_val = env.call_method(
-            &content_resolver,
-            "query",
-            "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
-            &[
-                jni::objects::JValue::from(&uri),
-                jni::objects::JValue::from(&jni::objects::JObject::null()),
-                jni::objects::JValue::from(&jni::objects::JObject::null()),
-                jni::objects::JValue::from(&jni::objects::JObject::null()),
-                jni::objects::JValue::from(&jni::objects::JObject::null()),
-            ],
-        );
-        if let Ok(c_res) = cursor_val {
-            if let Ok(cursor_obj) = c_res.l() {
-                if !cursor_obj.is_null() {
-                    let j_display_name = env.new_string("_display_name").unwrap();
-                    if let Ok(col_idx_val) = env.call_method(&cursor_obj, "getColumnIndex", "(Ljava/lang/String;)I", &[jni::objects::JValue::from(&j_display_name)]) {
-                        if let Ok(col_index) = col_idx_val.i() {
-                            if col_index >= 0 {
-                                if let Ok(has_next) = env.call_method(&cursor_obj, "moveToFirst", "()Z", &[]) {
-                                    if let Ok(true) = has_next.z() {
-                                        if let Ok(name_jstr_val) = env.call_method(&cursor_obj, "getString", "(I)Ljava/lang/String;", &[jni::objects::JValue::from(col_index)]) {
-                                            if let Ok(name_jstr_obj) = name_jstr_val.l() {
-                                                if !name_jstr_obj.is_null() {
-                                                    let name_jstring: jni::objects::JString = name_jstr_obj.into();
-                                                    if let Ok(name_rust) = env.get_string(&name_jstring).map(String::from) {
-                                                        file_name = name_rust;
+        let mut file_name = "upload.file".to_string();
+        if cleaned.starts_with("content://") {
+            let cursor_val = env.call_method(
+                &content_resolver,
+                "query",
+                "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
+                &[
+                    jni::objects::JValue::from(&uri),
+                    jni::objects::JValue::from(&jni::objects::JObject::null()),
+                    jni::objects::JValue::from(&jni::objects::JObject::null()),
+                    jni::objects::JValue::from(&jni::objects::JObject::null()),
+                    jni::objects::JValue::from(&jni::objects::JObject::null()),
+                ],
+            );
+            if let Ok(c_res) = cursor_val {
+                if let Ok(cursor_obj) = c_res.l() {
+                    if !cursor_obj.is_null() {
+                        let j_display_name = env.new_string("_display_name").map_err(|e| e.to_string())?;
+                        if let Ok(col_idx_val) = env.call_method(&cursor_obj, "getColumnIndex", "(Ljava/lang/String;)I", &[jni::objects::JValue::from(&j_display_name)]) {
+                            if let Ok(col_index) = col_idx_val.i() {
+                                if col_index >= 0 {
+                                    if let Ok(has_next) = env.call_method(&cursor_obj, "moveToFirst", "()Z", &[]) {
+                                        if let Ok(true) = has_next.z() {
+                                            if let Ok(name_jstr_val) = env.call_method(&cursor_obj, "getString", "(I)Ljava/lang/String;", &[jni::objects::JValue::from(col_index)]) {
+                                                if let Ok(name_jstr_obj) = name_jstr_val.l() {
+                                                    if !name_jstr_obj.is_null() {
+                                                        let name_jstring: jni::objects::JString = name_jstr_obj.into();
+                                                        if let Ok(name_rust) = env.get_string(&name_jstring).map(String::from) {
+                                                            file_name = name_rust;
+                                                        }
                                                     }
                                                 }
                                             }
@@ -129,40 +131,40 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
                                 }
                             }
                         }
+                        let _ = env.call_method(&cursor_obj, "close", "()V", &[]);
                     }
-                    let _ = env.call_method(&cursor_obj, "close", "()V", &[]);
                 }
             }
         }
-    }
 
-    let mode = env.new_string("r").unwrap();
-    let pfd_val = env.call_method(
-        &content_resolver,
-        "openFileDescriptor",
-        "(Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor;",
-        &[jni::objects::JValue::from(&uri), jni::objects::JValue::from(&mode)],
-    ).map_err(|e| format!("Failed to openFileDescriptor: {}", e))?;
-    
+        let mode = env.new_string("r").map_err(|e| e.to_string())?;
+        let pfd_val = env.call_method(
+            &content_resolver,
+            "openFileDescriptor",
+            "(Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor;",
+            &[jni::objects::JValue::from(&uri), jni::objects::JValue::from(&mode)],
+        ).map_err(|e| format!("Failed to openFileDescriptor: {}", e))?;
+        
+        let pfd = pfd_val.l().map_err(|e| format!("PFD is not object: {}", e))?;
+        
+        let fd_val = env.call_method(&pfd, "detachFd", "()I", &[]);
+        
+        // Attempt to close the PFD properly to prevent resource leaks
+        let _ = env.call_method(&pfd, "close", "()V", &[]);
 
-    let pfd = pfd_val.l().map_err(|e| format!("PFD is not object: {}", e))?;
-    
-    let fd_val = env.call_method(&pfd, "detachFd", "()I", &[]);
-    
-    // Attempt to close the PFD properly to prevent resource leaks
-    let _ = env.call_method(&pfd, "close", "()V", &[]);
+        let fd_val_unwrapped = fd_val.map_err(|e| format!("Failed to detachFd: {}", e))?;
+        let fd = fd_val_unwrapped.i().map_err(|e| format!("fd is not an int: {}", e))?;
+
+        log::info!("JNI successfully detached fd {} for file {}", fd, file_name);
+        Ok(format!("fd://{}|{}", fd, file_name))
+    })();
+
     if env.exception_check().unwrap_or(false) {
         let _ = env.exception_clear();
     }
 
-    let fd_val_unwrapped = fd_val.map_err(|e| format!("Failed to detachFd: {}", e))?;
-    let fd = fd_val_unwrapped.i().map_err(|e| format!("fd is not an int: {}", e))?;
-
-
-    log::info!("JNI successfully detached fd {} for file {}", fd, file_name);
-    Ok(format!("fd://{}|{}", fd, file_name))
+    result
 }
-
 #[cfg(not(target_os = "android"))]
 pub fn copy_to_android_cache(_raw_path: &str) -> Result<String, String> {
     Err("Not supported on this platform".to_string())
@@ -407,6 +409,10 @@ pub async fn cmd_upload_file(
     bw_state: State<'_, BandwidthManager>,
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
 ) -> Result<String, String> {
+    if path.starts_with("fd://") {
+        return Err("Security Exception: Arbitrary file descriptor access is forbidden".to_string());
+    }
+    
     let mut temp_cache_path: Option<String> = None;
 
     // Strict JNI Interception Guard for Android URI Schemes

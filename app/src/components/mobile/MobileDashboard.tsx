@@ -31,18 +31,6 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { theme } = useTheme();
   const { settings, updateSetting } = useSettings();
 
-  // Listen for auto-backup discovered files from Android FileObserver
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen<string[]>('auto-backup-discovered', (event) => {
-        if (event.payload && event.payload.length > 0) {
-            handleDropUpload(event.payload);
-        }
-    }).then(f => { unlisten = f; });
-    return () => { if (unlisten) unlisten(); };
-  }, [handleDropUpload]);
-
-  // Sync proxy settings to backend whenever they change
   useEffect(() => {
     const applyProxy = async () => {
       try {
@@ -96,7 +84,18 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             setActiveTab('downloads');
         }
     }).then(f => { unlisten = f; });
-    return () => { if (unlisten) unlisten(); };
+
+    let unlistenAutoBackup: (() => void) | undefined;
+    listen<string[]>('auto-backup-discovered', (event) => {
+        if (event.payload && event.payload.length > 0) {
+            handleDropUpload(event.payload);
+        }
+    }).then(f => { unlistenAutoBackup = f; });
+
+    return () => { 
+        if (unlisten) unlisten(); 
+        if (unlistenAutoBackup) unlistenAutoBackup();
+    };
   }, [handleDropUpload]);
 
   const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
@@ -80,7 +80,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         enabled: !!store,
     });
 
-    const displayedFiles = useMemo(() => {
+    const displayedFiles = useMemo<TelegramFile[]>(() => {
         return searchTerm.length > 2
             ? searchResults
             : allFiles.filter((f: TelegramFile) => f.name.toLowerCase().includes(searchTerm.toLowerCase()));
