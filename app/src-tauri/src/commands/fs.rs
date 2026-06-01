@@ -144,11 +144,20 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
         &[jni::objects::JValue::from(&uri), jni::objects::JValue::from(&mode)],
     ).map_err(|e| format!("Failed to openFileDescriptor: {}", e))?;
     
+
     let pfd = pfd_val.l().map_err(|e| format!("PFD is not object: {}", e))?;
     
-    let fd_val = env.call_method(&pfd, "detachFd", "()I", &[])
-        .map_err(|e| format!("Failed to detachFd: {}", e))?;
-    let fd = fd_val.i().map_err(|e| format!("fd is not an int: {}", e))?;
+    let fd_val = env.call_method(&pfd, "detachFd", "()I", &[]);
+    
+    // Attempt to close the PFD properly to prevent resource leaks
+    let _ = env.call_method(&pfd, "close", "()V", &[]);
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+
+    let fd_val_unwrapped = fd_val.map_err(|e| format!("Failed to detachFd: {}", e))?;
+    let fd = fd_val_unwrapped.i().map_err(|e| format!("fd is not an int: {}", e))?;
+
 
     log::info!("JNI successfully detached fd {} for file {}", fd, file_name);
     Ok(format!("fd://{}|{}", fd, file_name))

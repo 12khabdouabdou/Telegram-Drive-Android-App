@@ -6,6 +6,17 @@ use jni::JNIEnv;
 // Global AppHandle storage so JNI can emit events
 lazy_static::lazy_static! {
     pub static ref APP_HANDLE: std::sync::Mutex<Option<AppHandle>> = std::sync::Mutex::new(None);
+    pub static ref PENDING_SHARED_FILES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+}
+
+#[tauri::command]
+pub fn cmd_get_pending_shared_files() -> Vec<String> {
+    if let Ok(mut pending) = PENDING_SHARED_FILES.lock() {
+        let files = pending.clone();
+        pending.clear();
+        return files;
+    }
+    Vec::new()
 }
 
 #[cfg(target_os = "android")]
@@ -29,12 +40,17 @@ pub extern "C" fn Java_com_cameronamer_telegramdrive_MainActivity_onSharedFilesR
     
     log::info!("JNI: MainActivity received {} shared files", file_uris.len());
     
-    // Emit to frontend
+    // Store in cache for pull
+    if let Ok(mut pending) = PENDING_SHARED_FILES.lock() {
+        pending.extend(file_uris.clone());
+    }
+    
+    // Also try to emit directly if the app is already open
     if let Ok(guard) = APP_HANDLE.lock() {
         if let Some(app) = guard.as_ref() {
             let _ = app.emit("incoming-shared-files", file_uris);
         } else {
-            log::warn!("JNI: AppHandle not set, cannot emit incoming-shared-files");
+            log::warn!("JNI: AppHandle not set, cached shared files for later");
         }
     }
 }

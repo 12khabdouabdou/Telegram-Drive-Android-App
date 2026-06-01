@@ -31,6 +31,17 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { theme } = useTheme();
   const { settings, updateSetting } = useSettings();
 
+  // Listen for auto-backup discovered files from Android FileObserver
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<string[]>('auto-backup-discovered', (event) => {
+        if (event.payload && event.payload.length > 0) {
+            handleDropUpload(event.payload);
+        }
+    }).then(f => { unlisten = f; });
+    return () => { if (unlisten) unlisten(); };
+  }, [handleDropUpload]);
+
   // Sync proxy settings to backend whenever they change
   useEffect(() => {
     const applyProxy = async () => {
@@ -68,6 +79,15 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
   // Listen for shared files from Android Intent
   useEffect(() => {
+    // Pull any cached files that were shared while the app was closed
+    invoke<string[]>('cmd_get_pending_shared_files').then(files => {
+        if (files && files.length > 0) {
+            toast.success(`Received ${files.length} shared file(s). Uploading to current folder!`);
+            handleDropUpload(files);
+            setActiveTab('downloads');
+        }
+    }).catch(console.error);
+
     let unlisten: (() => void) | undefined;
     listen<string[]>('incoming-shared-files', (event) => {
         if (event.payload && event.payload.length > 0) {
@@ -288,7 +308,11 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   <p className="text-[10px] text-telegram-subtext">Automatically backup photos and videos</p>
                 </div>
                 <button
-                  onClick={() => updateSetting('autoBackupEnabled', !settings.autoBackupEnabled)}
+                  onClick={() => {
+                    const newEnabled = !settings.autoBackupEnabled;
+                    updateSetting('autoBackupEnabled', newEnabled);
+                    invoke('cmd_toggle_auto_backup', { enabled: newEnabled }).catch(console.error);
+                  }}
                   className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${settings.autoBackupEnabled ? 'bg-telegram-primary' : 'bg-telegram-border'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${settings.autoBackupEnabled ? 'translate-x-5' : 'translate-x-0'}`} />

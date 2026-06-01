@@ -80,9 +80,11 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         enabled: !!store,
     });
 
-    const displayedFiles = searchTerm.length > 2
-        ? searchResults
-        : allFiles.filter((f: TelegramFile) => f.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const displayedFiles = useMemo(() => {
+        return searchTerm.length > 2
+            ? searchResults
+            : allFiles.filter((f: TelegramFile) => f.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    }, [searchTerm, searchResults, allFiles]);
 
     const { data: bandwidth } = useQuery({
         queryKey: ['bandwidth'],

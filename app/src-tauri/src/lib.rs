@@ -599,6 +599,8 @@ pub fn run() {
             cmd_get_pending_share_count,
             cmd_list_cached_files,
             cmd_remove_cached_path,
+            crate::auto_backup::cmd_toggle_auto_backup,
+            crate::share_intent::cmd_get_pending_shared_files,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
