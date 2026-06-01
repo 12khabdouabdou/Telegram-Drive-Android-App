@@ -65,9 +65,14 @@ jobs:
         working-directory: app
         run: npm run tauri android build
 
+      - name: Sign APK
+        run: |
+          keytool -genkey -v -keystore release.keystore -alias androidkey -storepass android123 -keypass android123 -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=TelegramDrive, CN=TelegramDrive"
+          $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:android123 --key-pass pass:android123 --in app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk --out app-universal-release-signed.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-universal-release
-          path: app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+          name: Telegram-Drive-Signed-APK
+          path: app-universal-release-signed.apk
           if-no-files-found: warn
