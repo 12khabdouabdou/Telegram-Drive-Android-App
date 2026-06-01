@@ -632,3 +632,4 @@ pub fn run() {
 }
 
 mod auto_backup;
+mod uri_test;

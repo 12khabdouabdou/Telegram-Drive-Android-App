@@ -62,7 +62,7 @@ pub fn clean_android_path(raw_path: &str) -> String {
 
 #[cfg(target_os = "android")]
 pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
-    log::info!("JNI copy_to_android_cache started for path: {}", raw_path);
+    log::info!("JNI zero-copy interception started for path: {}", raw_path);
     let ctx_obj = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx_obj.vm().cast()) }
         .map_err(|e| format!("Failed to get JavaVM: {}", e))?;
@@ -71,104 +71,8 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
 
     let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };
 
-    // 1. URL Decode & Clean Path in Rust
     let cleaned = clean_android_path(raw_path);
-    log::info!("JNI Cleaned path: {}", cleaned);
 
-    // 2. Check if the main thread already pre-cached this URI.
-    //    This is the primary path for content:// URIs — the background thread
-    //    MUST NOT call ContentResolver.openInputStream() directly.
-    if cleaned.starts_with("content://") || cleaned.starts_with("msf:") || cleaned.starts_with("/msf:") || cleaned.contains("msf%") {
-        // Retrieve globally cached MainActivity class reference
-        let cached_ref = crate::jni_cache::get_main_activity_class()
-            .ok_or_else(|| "JNI: MainActivity class reference was NOT cached globally!".to_string())?;
-        let main_class: jni::objects::JClass = unsafe { std::mem::transmute_copy(cached_ref.as_obj()) };
-
-        // Step A: Check if onActivityResult pre-cached this URI.
-        // Validate the cached file is non-empty before accepting it.
-        {
-            let j_uri_str = env.new_string(raw_path)
-                .map_err(|e| format!("Failed to create URI string: {}", e))?;
-            let cached_result = env.call_static_method(
-                &main_class,
-                "getCachedPath",
-                "(Ljava/lang/String;)Ljava/lang/String;",
-                &[jni::objects::JValue::from(&j_uri_str)],
-            );
-            if let Ok(cached_val) = cached_result {
-                if let Ok(cached_jobj) = cached_val.l() {
-                    if !cached_jobj.is_null() {
-                        let cached_jstr: jni::objects::JString = cached_jobj.into();
-                        if let Ok(cached_path) = env.get_string(&cached_jstr).map(String::from) {
-                            if !cached_path.is_empty() {
-                                // Validate the cached file actually exists and has content
-                                match std::fs::metadata(&cached_path) {
-                                    Ok(meta) if meta.len() > 0 => {
-                                        log::info!("JNI: Found valid pre-cached path for URI: {} ({} bytes)", cached_path, meta.len());
-                                        return Ok(cached_path);
-                                    }
-                                    Ok(meta) => {
-                                        log::warn!("JNI: Pre-cache wrote invalid file: {} ({} bytes). Falling back to InputStream.", cached_path, meta.len());
-                                    }
-                                    Err(e) => {
-                                        log::warn!("JNI: Pre-cached file missing: {} ({}). Falling back to InputStream.", cached_path, e);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            let _ = env.exception_clear();
-        }
-
-        // Step B: HARD BOUNDARY fallback — call getLocalFileFromUri() which posts the
-        // ContentResolver.openInputStream work to the MAIN thread and blocks until done.
-        // Background thread NEVER touches ContentResolver directly.
-        // Validate the returned file is non-empty before accepting it.
-        {
-            log::info!("JNI: Pre-cache miss or invalid. Calling getLocalFileFromUri on main thread: {}", raw_path);
-            let j_uri_fallback = env.new_string(raw_path)
-                .map_err(|e| format!("Failed to create URI string for fallback: {}", e))?;
-            let fallback_result = env.call_static_method(
-                &main_class,
-                "getLocalFileFromUri",
-                "(Ljava/lang/String;)Ljava/lang/String;",
-                &[jni::objects::JValue::from(&j_uri_fallback)],
-            );
-            if let Ok(fallback_val) = fallback_result {
-                if let Ok(fallback_jobj) = fallback_val.l() {
-                    if !fallback_jobj.is_null() {
-                        let fallback_jstr: jni::objects::JString = fallback_jobj.into();
-                        if let Ok(fallback_path) = env.get_string(&fallback_jstr).map(String::from) {
-                            if !fallback_path.is_empty() {
-                                // Validate the fallback file actually exists and has content
-                                match std::fs::metadata(&fallback_path) {
-                                    Ok(meta) if meta.len() > 0 => {
-                                        log::info!("JNI: getLocalFileFromUri succeeded with valid file: {} ({} bytes)", fallback_path, meta.len());
-                                        return Ok(fallback_path);
-                                    }
-                                    Ok(meta) => {
-                                        log::warn!("JNI: getLocalFileFromUri wrote invalid file: {} ({} bytes). Falling back to InputStream.", fallback_path, meta.len());
-                                    }
-                                    Err(e) => {
-                                        log::warn!("JNI: getLocalFileFromUri file missing: {} ({}). Falling back to InputStream.", fallback_path, e);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            let _ = env.exception_clear();
-        }
-
-        // Step C: All pre-cache paths failed or returned empty files.
-        // Fall through to the raw InputStream approach below (step 3+).
-        log::info!("JNI: Pre-cache and getLocalFileFromUri both failed or returned empty. Falling through to raw InputStream copy.");
-    }
-
-    // 3. Parse URI (fallback for non-content:// paths or pre-cache misses)
     let uri_class = env.find_class("android/net/Uri")
         .map_err(|e| format!("Failed to find android/net/Uri: {}", e))?;
     let j_cleaned = env.new_string(&cleaned)
@@ -179,88 +83,16 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
         "(Ljava/lang/String;)Landroid/net/Uri;",
         &[jni::objects::JValue::from(&j_cleaned)],
     ).map_err(|e| format!("Failed to parse URI: {}", e))?;
-    
-    let uri = uri_val.l()
-        .map_err(|e| format!("URI result is not an object: {}", e))?;
+    let uri = uri_val.l().map_err(|e| format!("URI result is not an object: {}", e))?;
 
-    if uri.is_null() {
-        return Err("Parsed URI is null".to_string());
-    }
-
-    // 4. Get ContentResolver
     let content_resolver = env.call_method(
         &ctx,
         "getContentResolver",
         "()Landroid/content/ContentResolver;",
         &[],
-    ).map_err(|e| format!("Failed to get ContentResolver: {}", e))?
-    .l()
-    .map_err(|e| format!("ContentResolver is not an object: {}", e))?;
+    ).map_err(|e| format!("Failed to get ContentResolver: {}", e))?.l().unwrap();
 
-    // 5. Take Persistable URI Permission (best-effort, won't throw if it fails)
-    if cleaned.starts_with("content://") {
-        let intent_class = env.find_class("android/content/Intent")
-            .map_err(|e| format!("Failed to find android/content/Intent: {}", e))?;
-        if let Ok(flag_val) = env.get_static_field(
-            &intent_class,
-            "FLAG_GRANT_READ_URI_PERMISSION",
-            "I",
-        ) {
-            if let Ok(flag_grant_read) = flag_val.i() {
-                let res = env.call_method(
-                    &content_resolver,
-                    "takePersistableUriPermission",
-                    "(Landroid/net/Uri;I)V",
-                    &[jni::objects::JValue::from(&uri), jni::objects::JValue::from(flag_grant_read)],
-                );
-                if res.is_err() {
-                    log::warn!("JNI: takePersistableUriPermission failed; clearing exception.");
-                    let _ = env.exception_clear();
-                }
-            }
-        }
-    }
-
-    // 6. Open Input Stream
-    let input_stream = env.call_method(
-        &content_resolver,
-        "openInputStream",
-        "(Landroid/net/Uri;)Ljava/io/InputStream;",
-        &[jni::objects::JValue::from(&uri)],
-    ).map_err(|e| format!("Failed to openInputStream: {}", e))?
-    .l()
-    .map_err(|e| format!("InputStream is not an object: {}", e))?;
-
-    if input_stream.is_null() {
-        return Err("InputStream is null".to_string());
-    }
-
-    // 7. Get Cache Dir
-    let cache_dir_file = env.call_method(
-        &ctx,
-        "getCacheDir",
-        "()Ljava/io/File;",
-        &[],
-    ).map_err(|e| format!("Failed to getCacheDir: {}", e))?
-    .l()
-    .map_err(|e| format!("Cache dir is not an object: {}", e))?;
-
-    let cache_path_jstr = env.call_method(
-        &cache_dir_file,
-        "getAbsolutePath",
-        "()Ljava/lang/String;",
-        &[],
-    ).map_err(|e| format!("Failed to get absolute path of cache: {}", e))?
-    .l()
-    .map_err(|e| format!("Cache path is not String: {}", e))?;
-
-    let cache_path_jstring: jni::objects::JString = cache_path_jstr.into();
-    let cache_path: String = env.get_string(&cache_path_jstring)
-        .map_err(|e| format!("Failed to convert cache path to Rust: {}", e))?
-        .into();
-
-    // 8. Get display name or file name
-    let mut file_name = "temp_upload".to_string();
+    let mut file_name = "upload.file".to_string();
     if cleaned.starts_with("content://") {
         let cursor_val = env.call_method(
             &content_resolver,
@@ -274,44 +106,26 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
                 jni::objects::JValue::from(&jni::objects::JObject::null()),
             ],
         );
-        
         if let Ok(c_res) = cursor_val {
             if let Ok(cursor_obj) = c_res.l() {
                 if !cursor_obj.is_null() {
-                    let j_display_name = env.new_string("_display_name")
-                        .map_err(|e| format!("Failed to create display name string: {}", e))?;
-
-                    let col_index = env.call_method(
-                        &cursor_obj,
-                        "getColumnIndex",
-                        "(Ljava/lang/String;)I",
-                        &[jni::objects::JValue::from(&j_display_name)],
-                    ).ok()
-                    .and_then(|r| r.i().ok())
-                    .unwrap_or(-1);
-
-                    let has_first = env.call_method(
-                        &cursor_obj,
-                        "moveToFirst",
-                        "()Z",
-                        &[],
-                    ).ok()
-                    .and_then(|r| r.z().ok())
-                    .unwrap_or(false);
-
-                    if col_index != -1 && has_first {
-                        if let Ok(name_val) = env.call_method(
-                            &cursor_obj,
-                            "getString",
-                            "(I)Ljava/lang/String;",
-                            &[jni::objects::JValue::from(col_index)],
-                        ) {
-                            if let Ok(name_jstr_obj) = name_val.l() {
-                                if !name_jstr_obj.is_null() {
-                                     let name_jstring: jni::objects::JString = name_jstr_obj.into();
-                                     if let Ok(name_rust) = env.get_string(&name_jstring).map(String::from) {
-                                         file_name = name_rust;
-                                     }
+                    let j_display_name = env.new_string("_display_name").unwrap();
+                    if let Ok(col_idx_val) = env.call_method(&cursor_obj, "getColumnIndex", "(Ljava/lang/String;)I", &[jni::objects::JValue::from(&j_display_name)]) {
+                        if let Ok(col_index) = col_idx_val.i() {
+                            if col_index >= 0 {
+                                if let Ok(has_next) = env.call_method(&cursor_obj, "moveToFirst", "()Z", &[]) {
+                                    if let Ok(true) = has_next.z() {
+                                        if let Ok(name_jstr_val) = env.call_method(&cursor_obj, "getString", "(I)Ljava/lang/String;", &[jni::objects::JValue::from(col_index)]) {
+                                            if let Ok(name_jstr_obj) = name_jstr_val.l() {
+                                                if !name_jstr_obj.is_null() {
+                                                    let name_jstring: jni::objects::JString = name_jstr_obj.into();
+                                                    if let Ok(name_rust) = env.get_string(&name_jstring).map(String::from) {
+                                                        file_name = name_rust;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -320,124 +134,25 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
                 }
             }
         }
-    } else {
-        if let Some(name) = std::path::Path::new(&cleaned).file_name() {
-            file_name = name.to_string_lossy().to_string();
-        }
     }
 
-    // 9. Create cache file destination
-    let cache_file_name = format!("upload_{}_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(), file_name);
-    let dest_path = std::path::Path::new(&cache_path).join(cache_file_name);
-    let dest_path_str = dest_path.to_string_lossy().to_string();
-
-    // 10. Read InputStream bytes and write to local file in Rust (with retry).
-    //    Uses a helper to avoid duplicating the read loop between first attempt and retry.
-
-    // Helper: read all bytes from an InputStream JObject and write them to dest_path.
-    // Returns Ok(total_bytes_read) on success, or Err(message) on failure.
-    // Closes the stream when done (both on success and on read failure).
-    let read_stream_to_file = |
-        env: &mut jni::JNIEnv,
-        stream: &jni::objects::JObject,
-        dest_path: &str,
-    | -> Result<u64, String> {
-        let mut out_file = std::fs::File::create(dest_path)
-            .map_err(|e| format!("Failed to create destination cache file: {}", e))?;
-
-        const BUFFER_SIZE: i32 = 65536;
-        let byte_array = env.new_byte_array(BUFFER_SIZE)
-            .map_err(|e| format!("Failed to create Java byte array: {}", e))?;
-
-        let mut total_read: u64 = 0;
-        loop {
-            let bytes_read = match env.call_method(
-                stream,
-                "read",
-                "([B)I",
-                &[jni::objects::JValue::from(&byte_array)],
-            ) {
-                Ok(val) => match val.i() {
-                    Ok(n) => n,
-                    Err(e) => return Err(format!("read result error: {}", e)),
-                },
-                Err(e) => {
-                    let _ = env.exception_clear();
-                    return Err(format!("Failed to read from InputStream: {}", e));
-                }
-            };
-
-            if bytes_read <= 0 {
-                break;
-            }
-
-            let java_bytes = env.convert_byte_array(&byte_array)
-                .map_err(|e| format!("Failed to convert Java byte array: {}", e))?;
-
-            use std::io::Write;
-            out_file.write_all(&java_bytes[..bytes_read as usize])
-                .map_err(|e| format!("Failed to write bytes to cache file: {}", e))?;
-            total_read += bytes_read as u64;
-        }
-
-        let _ = env.call_method(stream, "close", "()V", &[]);
-
-        // Validate the written file is non-empty
-        match std::fs::metadata(dest_path) {
-            Ok(meta) if meta.len() > 0 => Ok(total_read),
-            Ok(meta) => Err(format!("File written is {} bytes (read {} bytes from stream)", meta.len(), total_read)),
-            Err(e) => Err(format!("Result file missing: {}", e)),
-        }
-    };
-
-    // First attempt: use the already-opened input_stream
-    match read_stream_to_file(&mut env, &input_stream, &dest_path_str) {
-        Ok(total_read) => {
-            log::info!(
-                "JNI InputStream first attempt succeeded: {} ({} bytes)",
-                dest_path_str, total_read
-            );
-            return Ok(dest_path_str);
-        }
-        Err(err) => {
-            log::warn!("JNI InputStream first attempt failed: {}. Retrying...", err);
-        }
-    }
-
-    // Retry: re-open the InputStream and try again
-    log::info!("JNI InputStream retry attempt for: {}", dest_path_str);
-    let retry_result = env.call_method(
+    let mode = env.new_string("r").unwrap();
+    let pfd_val = env.call_method(
         &content_resolver,
-        "openInputStream",
-        "(Landroid/net/Uri;)Ljava/io/InputStream;",
-        &[jni::objects::JValue::from(&uri)],
-    );
-    let retry_stream = match retry_result {
-        Ok(val) => match val.l() {
-            Ok(obj) if !obj.is_null() => obj,
-            _ => return Err("Retry: Failed to open InputStream".to_string()),
-        },
-        Err(e) => {
-            let _ = env.exception_clear();
-            return Err(format!("Retry: Failed to open InputStream: {}", e));
-        }
-    };
+        "openFileDescriptor",
+        "(Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor;",
+        &[jni::objects::JValue::from(&uri), jni::objects::JValue::from(&mode)],
+    ).map_err(|e| format!("Failed to openFileDescriptor: {}", e))?;
+    
+    let pfd = pfd_val.l().map_err(|e| format!("PFD is not object: {}", e))?;
+    
+    let fd_val = env.call_method(&pfd, "detachFd", "()I", &[])
+        .map_err(|e| format!("Failed to detachFd: {}", e))?;
+    let fd = fd_val.i().map_err(|e| format!("fd is not an int: {}", e))?;
 
-    match read_stream_to_file(&mut env, &retry_stream, &dest_path_str) {
-        Ok(total_read) => {
-            log::info!(
-                "JNI InputStream retry succeeded: {} ({} bytes)",
-                dest_path_str, total_read
-            );
-            Ok(dest_path_str)
-        }
-        Err(err) => {
-            Err(format!("InputStream copy failed after retry: {}", err))
-        }
-    }
+    log::info!("JNI successfully detached fd {} for file {}", fd, file_name);
+    Ok(format!("fd://{}|{}", fd, file_name))
 }
-
-
 
 #[cfg(not(target_os = "android"))]
 pub fn copy_to_android_cache(_raw_path: &str) -> Result<String, String> {
@@ -610,8 +325,7 @@ struct ProgressReader {
 }
 
 impl ProgressReader {
-    async fn new(path: &str) -> Result<(Self, u64, std::sync::Arc<std::sync::atomic::AtomicU64>), String> {
-        let file = tokio::fs::File::open(path).await.map_err(|e| e.to_string())?;
+    async fn new(file: tokio::fs::File) -> Result<(Self, u64, std::sync::Arc<std::sync::atomic::AtomicU64>), String> {
         let metadata = file.metadata().await.map_err(|e| e.to_string())?;
         let size = metadata.len();
         let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -730,8 +444,24 @@ async fn cmd_upload_file_inner(
     bw_state: State<'_, BandwidthManager>,
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
 ) -> Result<String, String> {
+    
+    // Support Zero-Copy Android Uploads via raw file descriptors
+    let file = if path.starts_with("fd://") {
+        #[cfg(target_os = "android")]
+        {
+            let fd_str = path[5..].split('|').next().unwrap_or(&path[5..]);
+            let fd: i32 = fd_str.parse().map_err(|e| format!("Invalid fd: {}", e))?;
+            unsafe {
+                tokio::fs::File::from_std(std::os::unix::io::FromRawFd::from_raw_fd(fd))
+            }
+        }
+        #[cfg(not(target_os = "android"))]
+        return Err("fd:// scheme only supported on Android".to_string());
+    } else {
+        tokio::fs::File::open(&path).await.map_err(|e| e.to_string())?
+    };
 
-    let size = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?.len();
+    let size = file.metadata().await.map_err(|e| e.to_string())?.len();
     bw_state.can_transfer(size)?;
 
     let tid = transfer_id.unwrap_or_default();
@@ -752,11 +482,25 @@ async fn cmd_upload_file_inner(
     }
 
     // Create progress-tracking reader
-    let (mut reader, file_size, bytes_counter) = ProgressReader::new(&path).await?;
-    let file_name = std::path::Path::new(&path)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "file".to_string());
+    let (mut reader, file_size, bytes_counter) = ProgressReader::new(file).await?;
+    let file_name = if path.starts_with("fd://") {
+        // If it's an fd, we don't have the original filename in the path,
+        // but for Telegram uploads, the frontend should ideally pass the filename or we use a fallback.
+        // Usually, the frontend passes `path` as the original filename in another field, but we can extract it if needed.
+        // Wait, the frontend doesn't pass the filename separately to cmd_upload_file. 
+        // We can encode it as `fd://<fd>|<filename>`
+        let parts: Vec<&str> = path[5..].splitn(2, '|').collect();
+        if parts.len() == 2 {
+            parts[1].to_string()
+        } else {
+            "upload.file".to_string()
+        }
+    } else {
+        std::path::Path::new(&path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "file".to_string())
+    };
 
     // Spawn a progress reporter task that emits events every 250ms
     let cancelled = state.cancelled_transfers.clone();
