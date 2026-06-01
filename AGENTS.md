@@ -22,6 +22,8 @@ This file contains crucial context for AI agents working on this codebase. Read 
 - **Zero-Copy Uploads:** The frontend passes `content://` URIs. Rust converts these to `fd://` using JNI `ParcelFileDescriptor` to upload them without caching to disk. *Security Note:* The frontend is strictly forbidden from passing `fd://` directly to prevent arbitrary file descriptor reading.
 
 ## Rust Backend & JNI Quirks
+- **Tauri v2 Traits:** When writing Rust code that interacts with the `AppHandle` or app state, explicitly import `use tauri::Emitter;` to use `.emit()` and `use tauri::Manager;` to use `.try_state()`. The compiler will fail without these traits in scope.
+- **JNI String Borrowing (E0597):** Do not assign `env.get_string(&jstr)` to a temporary variable inside an `if let` block if the base `jstr` is created in the same scope, or the Rust borrow checker will violently reject it. Instead, consume it instantly: `env.get_string(&jstr).map(|s| s.to_string_lossy().into_owned())`.
 - **JNI Exceptions:** When writing JNI logic, do not use the `?` operator immediately after a JNI call if it might throw a Java exception. You MUST call `env.exception_clear()` before returning `Err` across the FFI boundary, otherwise the entire JVM will crash on the next call.
 - **Background Processes:** If Android wakes the app via an Intent or Background Service while the UI is closed, React is not loaded. Rust must cache events (e.g., `share_intent.rs` caches shared files) and React must manually pull them (`cmd_get_pending_shared_files`) on mount.
 - **Linux:** `main.rs` forcibly injects `WEBKIT_DISABLE_DMABUF_RENDERER=1` to fix `EGL_BAD_ALLOC` issues on Arch/AppImages.
