@@ -31,29 +31,8 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { theme } = useTheme();
   const { settings, updateSetting } = useSettings();
 
-  // Listen for shared files from Android Intent
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen<string[]>('incoming-shared-files', (event) => {
-        if (event.payload && event.payload.length > 0) {
-            toast.success(`Received ${event.payload.length} shared file(s). Uploading to current folder!`);
-            handleDropUpload(event.payload);
-            setActiveTab('downloads');
-        }
-    }).then(f => { unlisten = f; });
-    return () => { if (unlisten) unlisten(); };
-  }, [handleDropUpload]);
-
   // Sync proxy settings to backend whenever they change
   useEffect(() => {
-    const unlistenFiles = listen<string[]>('incoming-shared-files', (event) => {
-        if (event.payload && event.payload.length > 0) {
-            toast.success(`Received ${event.payload.length} shared file(s). Select a folder if needed, they are uploading now!`);
-            handleDropUpload(event.payload);
-            setActiveTab('downloads');
-        }
-    });
-
     const applyProxy = async () => {
       try {
         await invoke('cmd_apply_proxy_settings', {
@@ -86,6 +65,19 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
   const { handleManualUpload, handleDropUpload } = useFileUpload(activeFolderId, store);
   const { queueDownload } = useFileDownload(store);
+
+  // Listen for shared files from Android Intent
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<string[]>('incoming-shared-files', (event) => {
+        if (event.payload && event.payload.length > 0) {
+            toast.success(`Received ${event.payload.length} shared file(s). Uploading to current folder!`);
+            handleDropUpload(event.payload);
+            setActiveTab('downloads');
+        }
+    }).then(f => { unlisten = f; });
+    return () => { if (unlisten) unlisten(); };
+  }, [handleDropUpload]);
 
   const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
   const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
