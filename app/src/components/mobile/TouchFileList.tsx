@@ -1,6 +1,7 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { DownloadCloud, Trash2, Pencil, CheckSquare, X, Check, FolderInput, MoreVertical, Eye } from 'lucide-react';
 import { toast } from 'sonner';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { FileTypeIcon } from '../shared/FileTypeIcon';
 import { ActionPopover, ActionItem } from './ActionPopover';
 import { TelegramFile, TelegramFolder } from '../../types';
@@ -88,6 +89,23 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
       destructive: true,
     },
   ], [onPreview, onDownload, onRename, onDelete]);
+
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
+  
+  useEffect(() => {
+    // We get the scroll container from MobileDashboard
+    const element = document.getElementById('mobile-scroll-container');
+    if (element) {
+      setScrollElement(element);
+    }
+  }, []);
+
+  const virtualizer = useVirtualizer({
+    count: files.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => 76, // Height of file row + gap
+    overscan: 5,
+  });
 
   return (
     <>
@@ -227,39 +245,54 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
             </div>
           )}
 
-          {/* File list — no more swipeable list, just tap-friendly rows with ⋮ menu */}
-          <div className="space-y-2.5 pb-20">
-            {files.map((file) => {
+          {/* File list — virtualized for extreme performance on large folders */}
+          <div 
+            className="relative w-full pb-20"
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const file = files[virtualItem.index];
               const isSelected = selectedIds.includes(file.id);
 
               return (
                 <div
-                  key={file.id}
-                  onPointerDown={(e) => handlePointerDown(e, file)}
-                  onPointerMove={handlePointerMove}
-                  onPointerUp={handlePointerUp}
-                  onPointerCancel={handlePointerUp}
-                  onClick={() => {
-                    if (isSelectionActive) {
-                      onToggleSelection(file.id);
-                    } else {
-                      onPreview(file);
-                    }
+                  key={virtualItem.key}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                    paddingBottom: '10px' // for spacing equivalent to space-y-2.5
                   }}
-                  className={`flex items-center justify-between p-3.5 rounded-2xl bg-telegram-hover/15 border transition-all duration-200 cursor-pointer active:bg-telegram-hover/35 ${
-                    isSelected ? 'border-telegram-primary/50 bg-telegram-primary/10' : 'border-telegram-border/20'
-                  }`}
                 >
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    {/* Selection checkbox in selection mode */}
-                    {isSelectionActive && (
-                      <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
-                        isSelected
-                          ? 'bg-telegram-primary border-telegram-primary text-black'
-                          : 'border-telegram-border/50 bg-transparent'
-                      }`}>
-                        {isSelected && <Check className="w-3.5 h-3.5" />}
-                      </div>
+                  <div
+                    onPointerDown={(e) => handlePointerDown(e, file)}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerUp}
+                    onClick={() => {
+                      if (isSelectionActive) {
+                        onToggleSelection(file.id);
+                      } else {
+                        onPreview(file);
+                      }
+                    }}
+                    className={`h-full flex items-center justify-between p-3.5 rounded-2xl bg-telegram-hover/15 border transition-all duration-200 cursor-pointer active:bg-telegram-hover/35 ${
+                      isSelected ? 'border-telegram-primary/50 bg-telegram-primary/10' : 'border-telegram-border/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      {/* Selection checkbox in selection mode */}
+                      {isSelectionActive && (
+                        <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
+                          isSelected
+                            ? 'bg-telegram-primary border-telegram-primary text-black'
+                            : 'border-telegram-border/50 bg-transparent'
+                        }`}>
+                          {isSelected && <Check className="w-3.5 h-3.5" />}
+                        </div>
                     )}
                     <div className="flex-shrink-0">
                       <FileTypeIcon filename={file.name} />
@@ -288,6 +321,7 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
                       <MoreVertical className="w-4 h-4" />
                     </button>
                   )}
+                  </div>
                 </div>
               );
             })}

@@ -182,7 +182,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       </header>
 
       {/* Main Viewport Container */}
-      <main className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth">
+      <main id="mobile-scroll-container" className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth">
         {activeTab === 'files' && (
           <div className="space-y-4">
             {/* Folder Header Breadcrumb */}
