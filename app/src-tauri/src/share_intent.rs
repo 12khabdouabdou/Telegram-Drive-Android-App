@@ -1,5 +1,4 @@
-use tauri::{AppHandle, Manager};
-use std::ffi::CStr;
+use tauri::{AppHandle, Emitter};
 use jni::objects::{JClass, JObjectArray, JString};
 use jni::JNIEnv;
 

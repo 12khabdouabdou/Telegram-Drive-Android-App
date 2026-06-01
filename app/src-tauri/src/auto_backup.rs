@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager};
+use tauri::{Manager, Emitter};
 use jni::objects::{JClass, JString};
 use jni::JNIEnv;
 
