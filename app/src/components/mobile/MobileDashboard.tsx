@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, ChevronDown, Cloud } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -30,8 +31,29 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { theme } = useTheme();
   const { settings, updateSetting } = useSettings();
 
+  // Listen for shared files from Android Intent
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<string[]>('incoming-shared-files', (event) => {
+        if (event.payload && event.payload.length > 0) {
+            toast.success(`Received ${event.payload.length} shared file(s). Uploading to current folder!`);
+            handleDropUpload(event.payload);
+            setActiveTab('downloads');
+        }
+    }).then(f => { unlisten = f; });
+    return () => { if (unlisten) unlisten(); };
+  }, [handleDropUpload]);
+
   // Sync proxy settings to backend whenever they change
   useEffect(() => {
+    const unlistenFiles = listen<string[]>('incoming-shared-files', (event) => {
+        if (event.payload && event.payload.length > 0) {
+            toast.success(`Received ${event.payload.length} shared file(s). Select a folder if needed, they are uploading now!`);
+            handleDropUpload(event.payload);
+            setActiveTab('downloads');
+        }
+    });
+
     const applyProxy = async () => {
       try {
         await invoke('cmd_apply_proxy_settings', {
@@ -62,7 +84,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     handleFolderRename
   } = useTelegramConnection(logoutHandler);
 
-  const { handleManualUpload } = useFileUpload(activeFolderId, store);
+  const { handleManualUpload, handleDropUpload } = useFileUpload(activeFolderId, store);
   const { queueDownload } = useFileDownload(store);
 
   const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);

@@ -370,6 +370,9 @@ pub fn run() {
 
     let app = builder
         .setup(move |app| {
+            if let Ok(mut guard) = crate::share_intent::APP_HANDLE.lock() {
+                *guard = Some(app.handle().clone());
+            }
             #[cfg(target_os = "android")]
             {
                 // SAFETY NET: Wrap all Android JNI initialization in catch_unwind to prevent
@@ -633,3 +636,4 @@ pub fn run() {
 
 mod auto_backup;
 mod uri_test;
+mod share_intent;

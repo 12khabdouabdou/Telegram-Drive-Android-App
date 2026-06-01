@@ -60,6 +60,20 @@ jobs:
           
           sed -i '/<\/application>/i \
           <service android:name=".AutoBackupService" android:foregroundServiceType="dataSync" android:exported="false" \/>' AndroidManifest.xml
+          
+          # Add Intent Filter to MainActivity for Share to App
+          sed -i '/<activity android:name=".MainActivity"/,/<\/activity>/ s/<\/activity>/\
+            <intent-filter>\
+                <action android:name="android.intent.action.SEND" \/>\
+                <category android:name="android.intent.category.DEFAULT" \/>\
+                <data android:mimeType="*\/*" \/>\
+            <\/intent-filter>\
+            <intent-filter>\
+                <action android:name="android.intent.action.SEND_MULTIPLE" \/>\
+                <category android:name="android.intent.category.DEFAULT" \/>\
+                <data android:mimeType="*\/*" \/>\
+            <\/intent-filter>\
+          <\/activity>/' AndroidManifest.xml
 
       - name: Build Android APK
         working-directory: app

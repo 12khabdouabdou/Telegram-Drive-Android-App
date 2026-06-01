@@ -51,6 +51,7 @@ sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 walkdir = "2"
 sqlite = { version = "0.37.0", features = ["bundled"] }
+lazy_static = "1.4"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
