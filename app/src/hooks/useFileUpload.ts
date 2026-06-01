@@ -24,6 +24,8 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
     const [processing, setProcessing] = useState(false);
     const [initialized, setInitialized] = useState(false);
     const cancelledRef = useRef<Set<string>>(new Set());
+    const activeFolderIdRef = useRef(activeFolderId);
+    useEffect(() => { activeFolderIdRef.current = activeFolderId; }, [activeFolderId]);
 
     // Listen for progress events from Rust
     useEffect(() => {
@@ -60,7 +62,7 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         if (!store || !initialized) return;
         const pending = uploadQueue.filter(i => i.status === 'pending');
         store.set('uploadQueue', pending).then(() => store.save());
-    }, [store, uploadQueue, initialized]);
+    }, [store, uploadQueue.map(q => q.id + q.status).join(','), initialized]); // FIXED: Prevent store.save() on every progress tick
 
     useEffect(() => {
         if (processing) return;
@@ -97,7 +99,11 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         setProcessing(true);
         setUploadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'uploading', progress: 0 } : i));
         try {
-            await invoke('cmd_upload_file', { path: item.path, folderId: item.folderId, transferId: item.id });
+            
+            const invokePromise = invoke('cmd_upload_file', { path: item.path, folderId: item.folderId, transferId: item.id });
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timed out or backend hung")), 1800000)); // 30 mins max per file
+            await Promise.race([invokePromise, timeoutPromise]);
+
             // Check if cancelled during upload
             if (cancelledRef.current.has(item.id)) {
                 cancelledRef.current.delete(item.id);
@@ -135,7 +141,7 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         const newItems: QueueItem[] = paths.map((path: string) => ({
             id: Math.random().toString(36).substr(2, 9),
             path,
-            folderId: activeFolderId,
+            folderId: activeFolderIdRef.current,
             status: 'pending' as const,
         }));
         setUploadQueue(prev => [...prev, ...newItems]);
@@ -212,7 +218,7 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
                 const item: QueueItem = {
                     id: Math.random().toString(36).substr(2, 9),
                     path: zipPath,
-                    folderId: activeFolderId,
+                    folderId: activeFolderIdRef.current,
                     status: 'pending',
                     tempZipPath: zipPath,
                 };

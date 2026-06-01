@@ -42,6 +42,12 @@ pub async fn cmd_create_share(
     let created_at = chrono::Utc::now().timestamp();
     let expires_at = expiry_hours.map(|hours| created_at + hours * 3600);
     
+    if let Some(ref pwd) = password {
+        if pwd.is_empty() {
+            return Err("Password cannot be empty if enabled".to_string());
+        }
+    }
+
     let (password_hash, password_salt) = if let Some(ref pwd) = password {
         if pwd.is_empty() {
             (None, None)

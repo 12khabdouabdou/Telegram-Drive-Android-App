@@ -58,7 +58,7 @@ export function useFileDownload(store: Store | null) {
         if (!store || !initialized) return;
         const pending = downloadQueue.filter(i => i.status === 'pending');
         store.set('downloadQueue', pending).then(() => store.save());
-    }, [store, downloadQueue, initialized]);
+    }, [store, downloadQueue.map(q => q.id + q.status).join(','), initialized]); // FIXED: Prevent store.save() on every progress tick
 
     // Queue Processor
     useEffect(() => {

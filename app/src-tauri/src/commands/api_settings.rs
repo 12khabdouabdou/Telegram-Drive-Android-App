@@ -42,7 +42,17 @@ pub fn load_settings(app: &AppHandle) -> ApiSettingsFile {
         Err(_) => return ApiSettingsFile::default(),
     };
     match std::fs::read_to_string(&path) {
-        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
+        Ok(contents) => {
+            match serde_json::from_str(&contents) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("api_settings.json is corrupted! Reverting to defaults. Error: {}", e);
+                    // Rename corrupted file instead of silently dropping it
+                    let _ = std::fs::rename(&path, path.with_extension("json.bak"));
+                    ApiSettingsFile::default()
+                }
+            }
+        },
         Err(_) => ApiSettingsFile::default(),
     }
 }
