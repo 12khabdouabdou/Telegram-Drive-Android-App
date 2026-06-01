@@ -9,8 +9,7 @@ pub extern "C" fn Java_com_cameronamer_telegramdrive_AutoBackupService_onFileDis
     _class: JClass,
     file_path: JString,
 ) {
-    if let Ok(path_str) = env.get_string(&file_path) {
-        let path = path_str.to_string_lossy().into_owned();
+    if let Ok(path) = env.get_string(&file_path).map(|s| s.to_string_lossy().into_owned()) {
         log::info!("JNI: AutoBackupService discovered new file: {}", path);
         
         if let Ok(guard) = crate::share_intent::APP_HANDLE.lock() {

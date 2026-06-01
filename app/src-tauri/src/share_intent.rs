@@ -31,8 +31,8 @@ pub extern "C" fn Java_com_cameronamer_telegramdrive_MainActivity_onSharedFilesR
     for i in 0..count {
         if let Ok(element) = env.get_object_array_element(&uris, i) {
             let jstr: JString = element.into();
-            if let Ok(rust_str) = env.get_string(&jstr) {
-                file_uris.push(rust_str.to_string_lossy().into_owned());
+            if let Ok(path) = env.get_string(&jstr).map(|s| s.to_string_lossy().into_owned()) {
+                file_uris.push(path);
             }
         }
     }
