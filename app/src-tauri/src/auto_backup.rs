@@ -149,9 +149,9 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
 
             for (id, path) in pending_files {
                 let tid = format!("autobackup_{}", id);
-                let state = app_handle.state::<crate::models::TelegramState>();
+                let state = app_handle.state::<crate::TelegramState>();
                 let bw_state = app_handle.state::<crate::bandwidth::BandwidthManager>();
-                let net_config = app_handle.state::<std::sync::Arc<crate::models::NetworkConfig>>();
+                let net_config = app_handle.state::<std::sync::Arc<crate::vpn_optimizer::NetworkConfig>>();
                 
                 log::info!("AutoBackup: processing {}", path);
                 let upload_res = crate::commands::fs::cmd_upload_file(

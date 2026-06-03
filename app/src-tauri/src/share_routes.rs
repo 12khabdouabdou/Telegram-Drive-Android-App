@@ -383,10 +383,7 @@ async fn verify_shared_file_password(
         None => return HttpResponse::BadRequest().body("No password required for this link"),
     };
     
-    let salt = row.password_salt.as_deref().unwrap_or("");
-    let entered_hash = hash_password(&form.password, salt);
-    
-    if &entered_hash == hash {
+    if crate::commands::sharing::verify_password(&form.password, hash) {
         // Set short-lived secure session cookie
         let val = generate_cookie_val(&token, hash);
         let cookie = Cookie::build(format!("share_auth_{}", token), val)

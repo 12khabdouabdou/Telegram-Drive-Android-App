@@ -1,5 +1,8 @@
 use serde::Serialize;
-use sha2::{Sha256, Digest};
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use tauri::State;
 use rand::Rng;
 use crate::db::DbConnection;
