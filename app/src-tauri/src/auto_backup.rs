@@ -264,7 +264,8 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
             }
             
             #[cfg(target_os = "android")]
-            if let Ok(ctx_obj) = ndk_context::android_context() {
+            {
+                let ctx_obj = ndk_context::android_context();
                 if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx_obj.vm().cast()) } {
                     if let Ok(mut env) = vm.attach_current_thread() {
                         let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };
