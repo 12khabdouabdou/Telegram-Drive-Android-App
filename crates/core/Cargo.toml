@@ -1,0 +1,30 @@
+[package]
+name = "telegram-drive-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+grammers-client = { workspace = true }
+grammers-session = { workspace = true }
+grammers-mtsender = { workspace = true }
+grammers-tl-types = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+argon2 = { workspace = true }
+sqlite = { workspace = true }
+walkdir = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+lazy_static = "1.4"
+uniffi = "0.27"
+
+[build-dependencies]
+uniffi = { version = "0.27", features = ["build"] }

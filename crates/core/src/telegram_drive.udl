@@ -1,0 +1,17 @@
+namespace telegram_drive {
+    void init_core(string data_dir);
+    
+    // Auth
+    string request_code(string phone, i32 api_id, string api_hash);
+    boolean sign_in(string code);
+    boolean check_password(string password);
+    boolean logout();
+
+    // Files
+    sequence<string> list_files(i64? folder_id);
+    void delete_file(i32 message_id, i64? folder_id);
+    
+    // Settings
+    boolean is_network_available();
+    i64 check_latency();
+};

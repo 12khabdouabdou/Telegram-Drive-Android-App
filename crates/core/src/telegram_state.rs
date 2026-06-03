@@ -29,21 +29,3 @@ pub struct TelegramState {
     /// in upload/download chunk loops. Cleared on logout.
     pub cancelled_transfers: Arc<tokio::sync::RwLock<HashSet<String>>>,
 }
-
-pub mod api_settings;
-pub mod auth;
-pub mod network;
-pub mod preview;
-pub mod settings;
-pub mod sharing;
-pub mod streaming;
-pub mod utils;
-
-pub use api_settings::*;
-pub use auth::*;
-pub use network::*;
-pub use preview::*;
-pub use settings::*;
-pub use sharing::*;
-pub use streaming::*;
-pub use utils::*;

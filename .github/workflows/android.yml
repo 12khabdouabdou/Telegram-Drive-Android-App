@@ -1,92 +1,49 @@
-name: Android Build
+name: Android Native Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
-  build-android:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
         with:
-          node-version: 20
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
           java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+          distribution: 'temurin'
+          cache: gradle
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
-      - name: Install NDK
-        run: sdkmanager "ndk;25.2.9519653" "build-tools;33.0.0" "platforms;android-33"
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
 
-      - name: Set Environment Variables
+      - name: Build Core Rust Library
         run: |
-          echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          cd crates/core
+          cargo ndk -t arm64-v8a -o ../../android/app/src/main/jniLibs build --release
 
-      - name: Install Frontend Dependencies
-        working-directory: app
-        run: npm install
-
-      - name: Initialize Tauri Android
-        working-directory: app
-        run: npm run tauri android init
-
-      - name: Patch AndroidManifest for Auto-Backup
-        working-directory: app/src-tauri/gen/android/app/src/main
+      - name: Generate UniFFI Bindings
         run: |
-          sed -i '/<uses-permission android:name="android.permission.INTERNET"/a \
-          <uses-permission android:name="android.permission.FOREGROUND_SERVICE" \/>\n\
-          <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" \/>\n\
-          <uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/>\n\
-          <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" \/>\n\
-          <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" \/>\n\
-          <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" \/>' AndroidManifest.xml
-          
-          sed -i '/<\/application>/i \
-          <service android:name=".AutoBackupService" android:foregroundServiceType="dataSync" android:exported="false" \/>' AndroidManifest.xml
-          
-          # Add Intent Filter to MainActivity for Share to App
-          sed -i '/<activity android:name=".MainActivity"/,/<\/activity>/ s/<\/activity>/\
-            <intent-filter>\
-                <action android:name="android.intent.action.SEND" \/>\
-                <category android:name="android.intent.category.DEFAULT" \/>\
-                <data android:mimeType="*\/*" \/>\
-            <\/intent-filter>\
-            <intent-filter>\
-                <action android:name="android.intent.action.SEND_MULTIPLE" \/>\
-                <category android:name="android.intent.category.DEFAULT" \/>\
-                <data android:mimeType="*\/*" \/>\
-            <\/intent-filter>\
-          <\/activity>/' AndroidManifest.xml
+          cd crates/core
+          cargo run --bin uniffi-bindgen generate src/telegram_drive.udl --language kotlin --out-dir ../../android/app/src/main/java/com/cameronamer/telegramdrive/generated
 
       - name: Build Android APK
-        working-directory: app
-        run: npm run tauri android build
-
-      - name: Sign APK
         run: |
-          keytool -genkey -v -keystore release.keystore -alias androidkey -storepass android123 -keypass android123 -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=TelegramDrive, CN=TelegramDrive"
-          $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:android123 --key-pass pass:android123 --in app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk --out app-universal-release-signed.apk
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: Telegram-Drive-Signed-APK
-          path: app-universal-release-signed.apk
-          if-no-files-found: warn
+          name: app-release
+          path: android/app/build/outputs/apk/release/app-release.apk

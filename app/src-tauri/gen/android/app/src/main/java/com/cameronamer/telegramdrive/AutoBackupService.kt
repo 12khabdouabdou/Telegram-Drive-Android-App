@@ -21,6 +21,21 @@ class AutoBackupService : Service() {
     private var mediaObserver: ContentObserver? = null
     private var targetFolders: Array<String>? = null
 
+    companion object {
+        @JvmStatic
+        fun updateNotificationStats(context: android.content.Context, queued: Int, completed: Int) {
+            val notification = NotificationCompat.Builder(context, "AutoBackupChannel")
+                .setContentTitle("Telegram Drive Auto-Backup")
+                .setContentText("Queued: $queued | Backed up: $completed")
+                .setSmallIcon(android.R.drawable.ic_popup_sync)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+
+            val manager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            manager.notify(2, notification)
+        }
+    }
+
     // Declare the native JNI function that communicates with our Rust backend
     private external fun onFileDiscovered(fileUri: String)
 

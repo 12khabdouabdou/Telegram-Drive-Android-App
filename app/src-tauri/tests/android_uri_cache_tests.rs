@@ -3,7 +3,6 @@
 /// Tests marked `#[cfg(target_os = "android")]` provide the real JNI-backed assertions;
 /// the platform-agnostic tests validate the non-Android stub and utility functions that
 /// are used by `copy_to_android_cache`.
-
 use app_lib::commands::fs;
 
 // ---------------------------------------------------------------------------
@@ -14,13 +13,21 @@ use app_lib::commands::fs;
 fn url_decode_basic_percent_encoding() {
     // url_decode is private; we validate it indirectly through clean_android_path.
     let result = fs::clean_android_path("file:///data/media/0/Documents/test%20file.txt");
-    assert!(result.contains("test file.txt"), "URL decoding failed: {}", result);
+    assert!(
+        result.contains("test file.txt"),
+        "URL decoding failed: {}",
+        result
+    );
 }
 
 #[test]
 fn url_decode_multiple_encodings() {
     let result = fs::clean_android_path("file:///storage/emulated/0/A%20B%2FC%3D");
-    assert!(result.contains("A B/C="), "Multi-encoding failed: {}", result);
+    assert!(
+        result.contains("A B/C="),
+        "Multi-encoding failed: {}",
+        result
+    );
 }
 
 #[test]
@@ -32,21 +39,35 @@ fn clean_android_path_raw_schemes() {
 #[test]
 fn clean_android_path_file_scheme() {
     let result = fs::clean_android_path("file:///data/media/0/Documents/foo.txt");
-    assert_eq!(result, "/data/media/0/Documents/foo.txt", "file:// not cleaned");
+    assert_eq!(
+        result, "/data/media/0/Documents/foo.txt",
+        "file:// not cleaned"
+    );
 }
 
 #[test]
 fn clean_android_path_preserves_content_scheme() {
-    let result = fs::clean_android_path("content://com.android.providers.media.documents/document/image%3A1234");
-    assert!(result.starts_with("content://"), "content:// should be preserved");
-    assert!(result.contains("image:1234"), "URL decode should apply inside content URI");
+    let result = fs::clean_android_path(
+        "content://com.android.providers.media.documents/document/image%3A1234",
+    );
+    assert!(
+        result.starts_with("content://"),
+        "content:// should be preserved"
+    );
+    assert!(
+        result.contains("image:1234"),
+        "URL decode should apply inside content URI"
+    );
 }
 
 #[test]
 fn clean_android_path_double_slash_collapse() {
     // Non-content URIs should collapse double slashes
     let result = fs::clean_android_path("file:////storage//emulated//0/test.mp4");
-    assert_eq!(result, "/storage/emulated/0/test.mp4", "Double slashes not collapsed");
+    assert_eq!(
+        result, "/storage/emulated/0/test.mp4",
+        "Double slashes not collapsed"
+    );
 }
 
 #[test]

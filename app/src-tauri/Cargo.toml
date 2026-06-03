@@ -16,6 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+telegram-drive-core = { path = "../../crates/core" }
 argon2 = "0.5.0"
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

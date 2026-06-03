@@ -10,7 +10,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::OnceLock;
-use tauri::{Emitter, State};
 use tokio::sync::oneshot;
 
 static UPLOAD_CANCELLATIONS: OnceLock<Mutex<HashMap<String, oneshot::Sender<()>>>> =
@@ -61,156 +60,12 @@ pub fn clean_android_path(raw_path: &str) -> String {
     cleaned
 }
 
-#[cfg(target_os = "android")]
-pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
-    log::info!("JNI zero-copy interception started for path: {}", raw_path);
-    let ctx_obj = ndk_context::android_context();
-    let vm = unsafe { jni::JavaVM::from_raw(ctx_obj.vm().cast()) }
-        .map_err(|e| format!("Failed to get JavaVM: {}", e))?;
-    let mut env = vm
-        .attach_current_thread()
-        .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
-    let result: Result<String, String> = (|| {
-        let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };
-        let cleaned = clean_android_path(raw_path);
 
-        let uri_class = env
-            .find_class("android/net/Uri")
-            .map_err(|e| format!("Failed to find android/net/Uri: {}", e))?;
-        let j_cleaned = env
-            .new_string(&cleaned)
-            .map_err(|e| format!("Failed to create Java string: {}", e))?;
-        let uri_val = env
-            .call_static_method(
-                &uri_class,
-                "parse",
-                "(Ljava/lang/String;)Landroid/net/Uri;",
-                &[jni::objects::JValue::from(&j_cleaned)],
-            )
-            .map_err(|e| format!("Failed to parse URI: {}", e))?;
-        let uri = uri_val
-            .l()
-            .map_err(|e| format!("URI result is not an object: {}", e))?;
 
-        let content_resolver = env
-            .call_method(
-                &ctx,
-                "getContentResolver",
-                "()Landroid/content/ContentResolver;",
-                &[],
-            )
-            .map_err(|e| format!("Failed to get ContentResolver: {}", e))?
-            .l()
-            .map_err(|e| format!("CR is not an object: {}", e))?;
-
-        let mut file_name = "upload.file".to_string();
-        if cleaned.starts_with("content://") {
-            let cursor_val = env.call_method(
-                &content_resolver,
-                "query",
-                "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;",
-                &[
-                    jni::objects::JValue::from(&uri),
-                    jni::objects::JValue::from(&jni::objects::JObject::null()),
-                    jni::objects::JValue::from(&jni::objects::JObject::null()),
-                    jni::objects::JValue::from(&jni::objects::JObject::null()),
-                    jni::objects::JValue::from(&jni::objects::JObject::null()),
-                ],
-            );
-            if let Ok(c_res) = cursor_val {
-                if let Ok(cursor_obj) = c_res.l() {
-                    if !cursor_obj.is_null() {
-                        let j_display_name =
-                            env.new_string("_display_name").map_err(|e| e.to_string())?;
-                        if let Ok(col_idx_val) = env.call_method(
-                            &cursor_obj,
-                            "getColumnIndex",
-                            "(Ljava/lang/String;)I",
-                            &[jni::objects::JValue::from(&j_display_name)],
-                        ) {
-                            if let Ok(col_index) = col_idx_val.i() {
-                                if col_index >= 0 {
-                                    if let Ok(has_next) =
-                                        env.call_method(&cursor_obj, "moveToFirst", "()Z", &[])
-                                    {
-                                        if let Ok(true) = has_next.z() {
-                                            if let Ok(name_jstr_val) = env.call_method(
-                                                &cursor_obj,
-                                                "getString",
-                                                "(I)Ljava/lang/String;",
-                                                &[jni::objects::JValue::from(col_index)],
-                                            ) {
-                                                if let Ok(name_jstr_obj) = name_jstr_val.l() {
-                                                    if !name_jstr_obj.is_null() {
-                                                        let name_jstring: jni::objects::JString =
-                                                            name_jstr_obj.into();
-                                                        if let Ok(name_rust) = env
-                                                            .get_string(&name_jstring)
-                                                            .map(String::from)
-                                                        {
-                                                            file_name = name_rust;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        let _ = env.call_method(&cursor_obj, "close", "()V", &[]);
-                    }
-                }
-            }
-        }
-
-        let mode = env.new_string("r").map_err(|e| e.to_string())?;
-        let pfd_val = env
-            .call_method(
-                &content_resolver,
-                "openFileDescriptor",
-                "(Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor;",
-                &[
-                    jni::objects::JValue::from(&uri),
-                    jni::objects::JValue::from(&mode),
-                ],
-            )
-            .map_err(|e| format!("Failed to openFileDescriptor: {}", e))?;
-
-        let pfd = pfd_val
-            .l()
-            .map_err(|e| format!("PFD is not object: {}", e))?;
-
-        let fd_val = env.call_method(&pfd, "detachFd", "()I", &[]);
-
-        // detachFd transfers ownership to native code, do NOT close the PFD here
-        // as it will throw an exception since the fd is no longer attached.
-
-        let fd_val_unwrapped = fd_val.map_err(|e| format!("Failed to detachFd: {}", e))?;
-        let fd = fd_val_unwrapped
-            .i()
-            .map_err(|e| format!("fd is not an int: {}", e))?;
-
-        log::info!("JNI successfully detached fd {} for file {}", fd, file_name);
-        Ok(format!("fd://{}|{}", fd, file_name))
-    })();
-
-    if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_clear();
-    }
-
-    result
-}
-#[cfg(not(target_os = "android"))]
-pub fn copy_to_android_cache(_raw_path: &str) -> Result<String, String> {
-    Err("Not supported on this platform".to_string())
-}
-
-#[tauri::command]
 pub async fn cmd_create_folder(
     name: String,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<FolderMetadata, String> {
     let client_opt = { state.client.lock().await.clone() };
 
@@ -294,10 +149,9 @@ pub async fn cmd_create_folder(
     })
 }
 
-#[tauri::command]
 pub async fn cmd_delete_folder(
     folder_id: i64,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<bool, String> {
     let client_opt = { state.client.lock().await.clone() };
 
@@ -331,11 +185,10 @@ pub async fn cmd_delete_folder(
     Ok(true)
 }
 
-#[tauri::command]
 pub async fn cmd_rename_folder(
     folder_id: i64,
     new_name: String,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<bool, String> {
     let client_opt = { state.client.lock().await.clone() };
 
@@ -371,12 +224,12 @@ pub async fn cmd_rename_folder(
 }
 
 #[derive(Clone, serde::Serialize)]
-struct ProgressPayload {
-    id: String,
-    percent: u8,
-    uploaded_bytes: u64,
-    total_bytes: u64,
-    speed_bytes_per_sec: u64,
+pub struct ProgressPayload {
+    pub id: String,
+    pub percent: u8,
+    pub uploaded_bytes: u64,
+    pub total_bytes: u64,
+    pub speed_bytes_per_sec: u64,
 }
 
 /// Async reader wrapper that tracks bytes read for progress reporting.
@@ -444,10 +297,9 @@ fn cleanup_partial_file(path: &str) {
     });
 }
 
-#[tauri::command]
 pub async fn cmd_cancel_transfer(
     transfer_id: String,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<bool, String> {
     log::info!("Cancelling transfer: {}", transfer_id);
     state
@@ -465,16 +317,14 @@ pub async fn cmd_cancel_transfer(
     Ok(true)
 }
 
-#[cfg_attr(not(target_os = "android"), allow(unused_mut))]
-#[tauri::command]
 pub async fn cmd_upload_file(
     mut path: String,
     folder_id: Option<i64>,
     transfer_id: Option<String>,
-    app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, BandwidthManager>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<ProgressPayload>>,
+    state: &TelegramState,
+    bw_state: &BandwidthManager,
+    net_config: &NetworkConfig,
 ) -> Result<String, String> {
     if path.starts_with("fd://") {
         return Err(
@@ -482,47 +332,17 @@ pub async fn cmd_upload_file(
         );
     }
 
-    let mut temp_cache_path: Option<String> = None;
-
-    // Strict JNI Interception Guard for Android URI Schemes
-    #[cfg(target_os = "android")]
-    {
-        if path.contains("content://") || path.contains("msf:") || path.contains("msf%") {
-            match copy_to_android_cache(&path) {
-                Ok(cached_path) => {
-                    log::info!(
-                        "JNI STRICT GUARD: Intercepted raw URI. Overwriting path: {} -> {}",
-                        path,
-                        cached_path
-                    );
-                    temp_cache_path = Some(cached_path.clone());
-                    path = cached_path;
-                }
-                Err(err) => {
-                    return Err(format!(
-                        "JNI STRICT GUARD FAILURE: Failed to copy raw URI {} to android cache: {}",
-                        path, err
-                    ));
-                }
-            }
-        }
-    }
 
     let result = cmd_upload_file_inner(
         path.clone(),
         folder_id,
         transfer_id,
-        app_handle,
+        progress_tx,
         state,
         bw_state,
         net_config,
     )
     .await;
-
-    if let Some(ref cache_path) = temp_cache_path {
-        let _ = tokio::fs::remove_file(cache_path).await;
-        log::info!("Removed temporary upload cache file: {}", cache_path);
-    }
 
     result
 }
@@ -531,10 +351,10 @@ async fn cmd_upload_file_inner(
     path: String,
     folder_id: Option<i64>,
     transfer_id: Option<String>,
-    app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, BandwidthManager>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<ProgressPayload>>,
+    state: &TelegramState,
+    bw_state: &BandwidthManager,
+    net_config: &NetworkConfig,
 ) -> Result<String, String> {
     // Support Zero-Copy Android Uploads via raw file descriptors
     let file = if path.starts_with("fd://") {
@@ -567,16 +387,13 @@ async fn cmd_upload_file_inner(
 
     // Emit start progress
     if !tid.is_empty() {
-        let _ = app_handle.emit(
-            "upload-progress",
-            ProgressPayload {
+        if let Some(tx) = progress_tx.as_ref() { let _ = tx.send(ProgressPayload {
                 id: tid.clone(),
                 percent: 0,
                 uploaded_bytes: 0,
                 total_bytes: size,
                 speed_bytes_per_sec: 0,
-            },
-        );
+            }).await; }
     }
 
     // Create progress-tracking reader
@@ -603,8 +420,9 @@ async fn cmd_upload_file_inner(
     // Spawn a progress reporter task that emits events every 250ms
     let cancelled = state.cancelled_transfers.clone();
     let progress_tid = tid.clone();
-    let progress_handle = app_handle.clone();
+    
     let progress_counter = bytes_counter.clone();
+    let progress_tx = progress_tx.clone();
     let progress_task = if !tid.is_empty() {
         Some(tokio::spawn(async move {
             let mut last_bytes: u64 = 0;
@@ -625,16 +443,13 @@ async fn cmd_upload_file_inner(
                     0
                 };
 
-                let _ = progress_handle.emit(
-                    "upload-progress",
-                    ProgressPayload {
+                if let Some(tx) = progress_tx.as_ref() { let _ = tx.send(ProgressPayload {
                         id: progress_tid.clone(),
                         percent,
                         uploaded_bytes: current,
                         total_bytes: file_size,
                         speed_bytes_per_sec: speed,
-                    },
-                );
+                    }).await; }
 
                 last_bytes = current;
                 last_time = now;
@@ -716,16 +531,13 @@ async fn cmd_upload_file_inner(
             Ok(_) => {
                 bw_state.add_up(size);
                 if !tid.is_empty() {
-                    let _ = app_handle.emit(
-                        "upload-progress",
-                        ProgressPayload {
+                    if let Some(tx) = progress_tx.as_ref() { let _ = tx.send(ProgressPayload {
                             id: tid,
                             percent: 100,
                             uploaded_bytes: size,
                             total_bytes: size,
                             speed_bytes_per_sec: 0,
-                        },
-                    );
+                        }).await; }
                 }
                 return Ok("File uploaded successfully".to_string());
             }
@@ -766,22 +578,20 @@ async fn cmd_upload_file_inner(
     ))
 }
 
-#[tauri::command]
 pub async fn initiate_upload(
     path: String,
     folder_id: Option<i64>,
     transfer_id: Option<String>,
-    app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, BandwidthManager>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<ProgressPayload>>,
+    state: &TelegramState,
+    bw_state: &BandwidthManager,
+    net_config: &NetworkConfig,
 ) -> Result<String, String> {
-    crate::upload_service::start_foreground_service();
     cmd_upload_file(
         path,
         folder_id,
         transfer_id,
-        app_handle,
+        progress_tx,
         state,
         bw_state,
         net_config,
@@ -789,11 +599,10 @@ pub async fn initiate_upload(
     .await
 }
 
-#[tauri::command]
 pub async fn cmd_delete_file(
     message_id: i32,
     folder_id: Option<i64>,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<bool, String> {
     let client_opt = { state.client.lock().await.clone() };
     if client_opt.is_none() {
@@ -816,64 +625,24 @@ pub async fn cmd_delete_file(
 
 #[derive(Debug, serde::Deserialize)]
 pub struct DownloadFileRequest {
-    message_id: i32,
-    save_path: String,
-    folder_id: Option<i64>,
-    transfer_id: Option<String>,
+    pub message_id: i32,
+    pub save_path: String,
+    pub folder_id: Option<i64>,
+    pub transfer_id: Option<String>,
 }
 
-#[tauri::command]
 pub async fn cmd_download_file(
     req: DownloadFileRequest,
-    app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, BandwidthManager>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<ProgressPayload>>,
+    state: &TelegramState,
+    bw_state: &BandwidthManager,
+    net_config: &NetworkConfig,
 ) -> Result<String, String> {
     let tid = req.transfer_id.unwrap_or_default();
     let save_path = req.save_path;
     let folder_id = req.folder_id;
     let message_id = req.message_id;
 
-    #[cfg(target_os = "android")]
-    let (actual_save_path, android_file_name) = {
-        use tauri::Manager;
-        let cache_dir = app_handle
-            .path()
-            .app_cache_dir()
-            .map_err(|e| format!("Failed to get cache dir: {}", e))?;
-        if !cache_dir.exists() {
-            let _ = std::fs::create_dir_all(&cache_dir);
-        }
-        // Android: save_path may be a content:// URI. Try to extract a clean filename.
-        let raw = std::path::Path::new(&save_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("download.bin");
-        // URL-decode in case the path came from a content:// URI (e.g. primary%2Fmyfile.pdf)
-        let decoded = url_decode(raw).trim_end_matches('/').to_string();
-        // If the decoded value still looks like a URI path, take only the last segment
-        let clean_name = std::path::Path::new(&decoded)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&decoded)
-            .to_string();
-        let file_name = if clean_name.is_empty() {
-            "download.bin".to_string()
-        } else {
-            clean_name
-        };
-        let cache_path = cache_dir.join(&file_name).to_string_lossy().to_string();
-        log::info!(
-            "Android download: save_path='{}', extracted filename='{}', cache='{}'",
-            save_path,
-            file_name,
-            cache_path
-        );
-        (cache_path, file_name)
-    };
-
-    #[cfg(not(target_os = "android"))]
     let actual_save_path = save_path.clone();
 
     let client_opt = { state.client.lock().await.clone() };
@@ -922,16 +691,13 @@ pub async fn cmd_download_file(
 
     // Emit start
     if !tid.is_empty() {
-        let _ = app_handle.emit(
-            "download-progress",
-            ProgressPayload {
+        if let Some(tx) = progress_tx.as_ref() { let _ = tx.send(ProgressPayload {
                 id: tid.clone(),
                 percent: 0,
                 uploaded_bytes: 0,
                 total_bytes: total_size,
                 speed_bytes_per_sec: 0,
-            },
-        );
+            }).await; }
     }
 
     // Stream download with per-chunk progress
@@ -998,16 +764,13 @@ pub async fn cmd_download_file(
                 } else {
                     0
                 };
-                let _ = app_handle.emit(
-                    "download-progress",
-                    ProgressPayload {
+                if let Some(tx) = progress_tx.as_ref() { let _ = tx.send(ProgressPayload {
                         id: tid.clone(),
                         percent,
                         uploaded_bytes: downloaded,
                         total_bytes: total_size,
                         speed_bytes_per_sec: speed,
-                    },
-                );
+                    }).await; }
                 last_emit_time = now;
                 last_emit_bytes = downloaded;
             }
@@ -1070,124 +833,24 @@ pub async fn cmd_download_file(
 
     // Emit completion
     if !tid.is_empty() {
-        let _ = app_handle.emit(
-            "download-progress",
-            ProgressPayload {
+        if let Some(tx) = progress_tx.as_ref() { let _ = tx.send(ProgressPayload {
                 id: tid,
                 percent: 100,
                 uploaded_bytes: downloaded,
                 total_bytes: total_size,
                 speed_bytes_per_sec: 0,
-            },
-        );
+            }).await; }
     }
 
-    #[cfg(target_os = "android")]
-    {
-        // Copy from actual_save_path to public downloads via MediaStore JNI!
-        // Use the already-decoded filename from the cache path computation above
-        let file_name = &android_file_name;
-
-        let lower_ext = std::path::Path::new(file_name)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-
-        let mime_type = match lower_ext.as_str() {
-            "jpg" | "jpeg" => "image/jpeg",
-            "png" => "image/png",
-            "pdf" => "application/pdf",
-            "mp4" => "video/mp4",
-            "mp3" => "audio/mpeg",
-            "txt" => "text/plain",
-            "zip" => "application/zip",
-            "bin" => "application/octet-stream",
-            _ => "application/octet-stream",
-        };
-
-        log::info!(
-            "JNI: Copying {} from cache {} to public downloads",
-            file_name,
-            actual_save_path
-        );
-
-        let jni_success = {
-            let mut success = false;
-            let ctx = ndk_context::android_context();
-            if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
-                if let Ok(mut env) = vm.attach_current_thread() {
-                    if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-                        let class_obj = env.new_local_ref(cached_ref.as_obj()).map_err(|e| e.to_string())?;
-                        let main_class: jni::objects::JClass = class_obj.into();
-                        if let Ok(j_cache_path) = env.new_string(&actual_save_path) {
-                            if let Ok(j_file_name) = env.new_string(file_name) {
-                                if let Ok(j_mime_type) = env.new_string(mime_type) {
-                                    let call_res = env.call_static_method(
-                                        &main_class,
-                                        "saveFileToPublicDownloads",
-                                        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z",
-                                        &[
-                                            jni::objects::JValue::from(&j_cache_path),
-                                            jni::objects::JValue::from(&j_file_name),
-                                            jni::objects::JValue::from(&j_mime_type),
-                                        ],
-                                    );
-
-                                    match call_res {
-                                        Ok(val) => {
-                                            if let Ok(b) = val.z() {
-                                                success = b;
-                                            }
-                                        }
-                                        Err(e) => {
-                                            log::error!(
-                                                "JNI: saveFileToPublicDownloads call failed: {}",
-                                                e
-                                            );
-                                            if env.exception_check().unwrap_or(false) {
-                                                let _ = env.exception_describe();
-                                                let _ = env.exception_clear();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        log::error!("JNI: MainActivity class reference was NOT cached globally!");
-                    }
-                }
-            }
-            success
-        };
-
-        if !jni_success {
-            // Keep the cache file as a fallback so the user's data is not lost
-            log::error!(
-                "JNI: Failed to copy to public downloads. Cache file preserved at: {}",
-                actual_save_path
-            );
-            return Err("Failed to save downloaded file to public downloads folder".to_string());
-        }
-
-        // Only clean up the cache copy AFTER confirming JNI succeeded
-        let _ = tokio::fs::remove_file(&actual_save_path).await;
-        log::info!(
-            "JNI: Successfully copied to public downloads and cleaned up cache: {}",
-            actual_save_path
-        );
-    }
 
     Ok("Download successful".to_string())
 }
 
-#[tauri::command]
 pub async fn cmd_move_files(
     message_ids: Vec<i32>,
     source_folder_id: Option<i64>,
     target_folder_id: Option<i64>,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<bool, String> {
     if source_folder_id == target_folder_id {
         return Ok(true);
@@ -1224,12 +887,11 @@ pub async fn cmd_move_files(
     }
 }
 
-#[tauri::command]
 pub async fn cmd_get_files(
     folder_id: Option<i64>,
     offset_id: Option<i32>,
     limit: Option<usize>,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<Vec<FileMetadata>, String> {
     let client_opt = { state.client.lock().await.clone() };
     if client_opt.is_none() {
@@ -1283,10 +945,9 @@ pub async fn cmd_get_files(
     Ok(files)
 }
 
-#[tauri::command]
 pub async fn cmd_search_global(
     query: String,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<Vec<FileMetadata>, String> {
     let client_opt = { state.client.lock().await.clone() };
     if client_opt.is_none() {
@@ -1398,9 +1059,8 @@ pub async fn cmd_search_global(
     Ok(files)
 }
 
-#[tauri::command]
 pub async fn cmd_scan_folders(
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<Vec<FolderMetadata>, String> {
     let client_opt = { state.client.lock().await.clone() };
     if client_opt.is_none() {
@@ -1507,7 +1167,6 @@ pub async fn cmd_scan_folders(
 
 /// Zip a folder's contents into a temp file and return the path.
 /// The resulting zip preserves the relative directory structure.
-#[tauri::command]
 pub async fn cmd_zip_folder(folder_path: String) -> Result<String, String> {
     let folder_path = if cfg!(target_os = "android") {
         clean_android_path(&folder_path)
@@ -1584,7 +1243,6 @@ pub async fn cmd_zip_folder(folder_path: String) -> Result<String, String> {
 }
 
 /// Delete a temporary zip file created by cmd_zip_folder.
-#[tauri::command]
 pub async fn cmd_delete_temp_zip(path: String) -> Result<(), String> {
     let path_clone = path.clone();
     tokio::task::spawn_blocking(move || {
@@ -1612,12 +1270,11 @@ pub async fn cmd_delete_temp_zip(path: String) -> Result<(), String> {
 /// Toggle a folder (channel) between private and public.
 /// When making public, a username is generated from the channel title.
 /// When making private, the username is removed.
-#[tauri::command]
 pub async fn cmd_toggle_folder_visibility(
     folder_id: i64,
     make_public: bool,
     desired_username: Option<String>,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<FolderMetadata, String> {
     let client_opt = { state.client.lock().await.clone() };
 
@@ -1792,10 +1449,9 @@ pub struct FolderInviteInfo {
     pub username: Option<String>,
 }
 
-#[tauri::command]
 pub async fn cmd_export_folder_invite(
     folder_id: i64,
-    state: State<'_, TelegramState>,
+    state: &TelegramState,
 ) -> Result<FolderInviteInfo, String> {
     let client_opt = { state.client.lock().await.clone() };
 
