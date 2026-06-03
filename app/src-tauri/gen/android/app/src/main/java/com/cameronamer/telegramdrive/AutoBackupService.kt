@@ -148,8 +148,8 @@ class AutoBackupService : Service() {
             // Since this runs on any change, let's just grab the absolute newest from Files.
             
             val filesUri = MediaStore.Files.getContentUri("external")
-            val filesProjection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.MEDIA_TYPE)
-            val filesSelection = "${MediaStore.MediaColumns.MEDIA_TYPE} = ? OR ${MediaStore.MediaColumns.MEDIA_TYPE} = ?"
+            val filesProjection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.Files.FileColumns.MEDIA_TYPE)
+            val filesSelection = "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ? OR ${MediaStore.Files.FileColumns.MEDIA_TYPE} = ?"
             val filesSelectionArgs = arrayOf(
                 MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
                 MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
@@ -164,7 +164,7 @@ class AutoBackupService : Service() {
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                    val typeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MEDIA_TYPE)
+                    val typeColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
                     val id = cursor.getLong(idColumn)
                     val type = cursor.getInt(typeColumn)
                     
