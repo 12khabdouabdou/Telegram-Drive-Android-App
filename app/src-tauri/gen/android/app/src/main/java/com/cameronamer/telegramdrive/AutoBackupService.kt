@@ -19,6 +19,7 @@ class AutoBackupService : Service() {
     private val CHANNEL_ID = "AutoBackupChannel"
     private val NOTIFICATION_ID = 2
     private var mediaObserver: ContentObserver? = null
+    private var targetFolders: Array<String>? = null
 
     // Declare the native JNI function that communicates with our Rust backend
     private external fun onFileDiscovered(fileUri: String)
@@ -37,6 +38,8 @@ class AutoBackupService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        targetFolders = intent?.getStringArrayExtra("folders")
+
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Telegram Drive Auto-Backup")
             .setContentText("Monitoring for new photos...")
@@ -49,6 +52,34 @@ class AutoBackupService : Service() {
         startWatchingMedia()
 
         return START_STICKY
+    }
+
+    private fun checkAndNotifyDiscovered(uri: Uri) {
+        val folders = targetFolders
+        if (folders.isNullOrEmpty()) {
+            onFileDiscovered(uri.toString())
+            return
+        }
+
+        try {
+            val projection = arrayOf(MediaStore.MediaColumns.DATA)
+            contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                    val path = cursor.getString(dataIndex)
+                    if (path != null) {
+                        for (folder in folders) {
+                            if (path.contains(folder)) {
+                                onFileDiscovered(uri.toString())
+                                return
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("AutoBackupService", "Error checking path for $uri", e)
+        }
     }
 
     private fun startWatchingMedia() {
@@ -64,7 +95,7 @@ class AutoBackupService : Service() {
                 if (uri != null && uri.lastPathSegment?.toLongOrNull() != null) {
                     Log.i("AutoBackupService", "New media directly detected from URI: $uri")
                     try {
-                        onFileDiscovered(uri.toString())
+                        checkAndNotifyDiscovered(uri)
                     } catch (e: Exception) {
                         Log.e("AutoBackupService", "Failed to call Rust JNI", e)
                     }
@@ -144,7 +175,7 @@ class AutoBackupService : Service() {
                     }
                     
                     Log.i("AutoBackupService", "New media detected: $contentUri")
-                    onFileDiscovered(contentUri.toString())
+                    checkAndNotifyDiscovered(contentUri)
                 }
             }
         } catch (e: Exception) {

@@ -365,6 +365,18 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                     </select>
                   </div>
 
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Folders to Monitor</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Camera, Screenshots"
+                      value={settings.autoBackupFolders?.join(', ') || ''}
+                      onChange={(e) => updateSetting('autoBackupFolders', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                      className="w-full bg-telegram-bg border border-telegram-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-telegram-primary"
+                    />
+                    <p className="text-[10px] text-telegram-subtext mt-1">Comma-separated (leave empty for all folders)</p>
+                  </div>
+
                   <div className="flex items-center justify-between py-2">
                     <div>
                       <p className="text-xs font-medium">Wi-Fi Only</p>
