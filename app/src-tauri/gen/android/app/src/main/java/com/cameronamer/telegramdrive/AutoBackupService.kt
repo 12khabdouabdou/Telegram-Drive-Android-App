@@ -5,21 +5,23 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.database.ContentObserver
+import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
-import android.os.FileObserver
-import android.os.Environment
+import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import java.io.File
 
 class AutoBackupService : Service() {
     private val CHANNEL_ID = "AutoBackupChannel"
     private val NOTIFICATION_ID = 2
-    private val observers = mutableListOf<FileObserver>()
+    private var mediaObserver: ContentObserver? = null
 
     // Declare the native JNI function that communicates with our Rust backend
-    private external fun onFileDiscovered(filePath: String)
+    private external fun onFileDiscovered(fileUri: String)
 
     init {
         try {
@@ -44,67 +46,118 @@ class AutoBackupService : Service() {
 
         startForeground(NOTIFICATION_ID, notification)
         
-        var folders: Array<String>? = null
-        if (intent != null) {
-            folders = intent.getStringArrayExtra("folders")
-        }
-        
-        startWatchingDirectories(folders)
+        startWatchingMedia()
 
         return START_STICKY
     }
 
-    private fun startWatchingDirectories(foldersFromIntent: Array<String>?) {
+    private fun startWatchingMedia() {
         // Stop any existing observers
-        observers.forEach { it.stopWatching() }
-        observers.clear()
-
-        val foldersToWatch = mutableListOf<File>()
-        
-        if (foldersFromIntent != null && foldersFromIntent.isNotEmpty()) {
-            for (folderName in foldersFromIntent) {
-                // If it looks like an absolute path, use it directly, otherwise assume it's relative to external storage
-                if (folderName.startsWith("/")) {
-                    foldersToWatch.add(File(folderName))
-                } else {
-                    foldersToWatch.add(File(Environment.getExternalStorageDirectory(), folderName))
-                }
-            }
-        } else {
-            val dcimCamera = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
-            val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            foldersToWatch.add(dcimCamera)
-            foldersToWatch.add(pictures)
+        if (mediaObserver != null) {
+            contentResolver.unregisterContentObserver(mediaObserver!!)
+            mediaObserver = null
         }
 
-        for (folder in foldersToWatch) {
-            if (folder.exists() && folder.isDirectory) {
-                // Using FileObserver(File, int) constructor API 29+
-                val observer = object : FileObserver(folder, CREATE) {
-                    override fun onEvent(event: Int, path: String?) {
-                        if (path != null) {
-                            val fullPath = File(folder, path).absolutePath
-                            Log.i("AutoBackupService", "New file detected: $fullPath")
-                            // Pass the newly discovered file path back to the Rust backend
-                            try {
-                                onFileDiscovered(fullPath)
-                            } catch (e: Exception) {
-                                Log.e("AutoBackupService", "Failed to call Rust JNI", e)
-                            }
-                        }
+        mediaObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                super.onChange(selfChange, uri)
+                if (uri != null && uri.lastPathSegment?.toLongOrNull() != null) {
+                    Log.i("AutoBackupService", "New media directly detected from URI: $uri")
+                    try {
+                        onFileDiscovered(uri.toString())
+                    } catch (e: Exception) {
+                        Log.e("AutoBackupService", "Failed to call Rust JNI", e)
                     }
+                } else {
+                    handleMediaChange()
                 }
-                observer.startWatching()
-                observers.add(observer)
-                Log.i("AutoBackupService", "Started watching folder: ${folder.absolutePath}")
             }
+        }
+
+        try {
+            contentResolver.registerContentObserver(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                true,
+                mediaObserver!!
+            )
+            contentResolver.registerContentObserver(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                true,
+                mediaObserver!!
+            )
+            Log.i("AutoBackupService", "Started watching MediaStore")
+        } catch (e: Exception) {
+            Log.e("AutoBackupService", "Failed to register ContentObserver", e)
+        }
+    }
+    
+    private fun handleMediaChange() {
+        try {
+            val projection = arrayOf(MediaStore.MediaColumns._ID)
+            val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+            
+            // Query latest image
+            var latestUri: Uri? = null
+            contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                sortOrder
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                    val id = cursor.getLong(idColumn)
+                    latestUri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString())
+                }
+            }
+            
+            // Query latest video and compare if necessary, or just query Files depending on needs.
+            // For simplicity and speed, just check both and see which is newer, or rely on the trigger.
+            // Since this runs on any change, let's just grab the absolute newest from Files.
+            
+            val filesUri = MediaStore.Files.getContentUri("external")
+            val filesProjection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.MEDIA_TYPE)
+            val filesSelection = "${MediaStore.MediaColumns.MEDIA_TYPE} = ? OR ${MediaStore.MediaColumns.MEDIA_TYPE} = ?"
+            val filesSelectionArgs = arrayOf(
+                MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
+                MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
+            )
+            
+            contentResolver.query(
+                filesUri,
+                filesProjection,
+                filesSelection,
+                filesSelectionArgs,
+                sortOrder
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                    val typeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MEDIA_TYPE)
+                    val id = cursor.getLong(idColumn)
+                    val type = cursor.getInt(typeColumn)
+                    
+                    val contentUri = if (type == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) {
+                        Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString())
+                    } else {
+                        Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id.toString())
+                    }
+                    
+                    Log.i("AutoBackupService", "New media detected: $contentUri")
+                    onFileDiscovered(contentUri.toString())
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("AutoBackupService", "Error handling media change", e)
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        observers.forEach { it.stopWatching() }
-        observers.clear()
+        if (mediaObserver != null) {
+            contentResolver.unregisterContentObserver(mediaObserver!!)
+            mediaObserver = null
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? {
