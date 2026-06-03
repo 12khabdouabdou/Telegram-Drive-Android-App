@@ -1,4 +1,5 @@
-import { HardDrive, LayoutGrid, Sun, Moon, Settings, Share2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { HardDrive, LayoutGrid, Sun, Moon, Settings, Share2, Plus, FilePlus, FolderUp, ChevronDown } from 'lucide-react';
 import { useTheme } from '../../../context/ThemeContext';
 
 interface TopBarProps {
@@ -14,13 +15,28 @@ interface TopBarProps {
     searchTerm: string;
     onSearchChange: (term: string) => void;
     onSettingsClick: () => void;
+    onManualUpload?: () => void;
+    onFolderUpload?: () => void;
 }
 
 export function TopBar({
     currentFolderName, selectedIds, onShowMoveModal, onBulkDownload, onBulkDelete, onBulkShare,
-    onDownloadFolder, viewMode, setViewMode, searchTerm, onSearchChange, onSettingsClick
+    onDownloadFolder, viewMode, setViewMode, searchTerm, onSearchChange, onSettingsClick,
+    onManualUpload, onFolderUpload
 }: TopBarProps) {
     const { theme, toggleTheme } = useTheme();
+    const [showUploadMenu, setShowUploadMenu] = useState(false);
+    const uploadMenuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (uploadMenuRef.current && !uploadMenuRef.current.contains(event.target as Node)) {
+                setShowUploadMenu(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     return (
         <header className="h-14 border-b border-telegram-border flex items-center px-4 justify-between bg-telegram-surface/80 backdrop-blur-md sticky top-0 z-10" onClick={e => e.stopPropagation()}>
@@ -43,6 +59,36 @@ export function TopBar({
             </div>
 
             <div className="flex items-center gap-2">
+                <div className="relative mr-2" ref={uploadMenuRef}>
+                    <button 
+                        onClick={() => setShowUploadMenu(!showUploadMenu)}
+                        className="flex items-center gap-2 px-4 py-1.5 bg-telegram-primary text-white rounded-lg text-sm font-medium hover:bg-telegram-primary/90 transition-all shadow-sm active:scale-95"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Upload
+                        <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+                    </button>
+                    
+                    {showUploadMenu && (
+                        <div className="absolute top-full right-0 mt-2 w-48 bg-telegram-surface border border-telegram-border rounded-xl shadow-2xl py-1.5 z-50 animate-in fade-in slide-in-from-top-2">
+                            <button 
+                                onClick={() => { setShowUploadMenu(false); onManualUpload?.(); }}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-telegram-text hover:bg-telegram-hover transition-colors"
+                            >
+                                <FilePlus className="w-4 h-4 text-telegram-primary" />
+                                Upload Files...
+                            </button>
+                            <button 
+                                onClick={() => { setShowUploadMenu(false); onFolderUpload?.(); }}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-telegram-text hover:bg-telegram-hover transition-colors"
+                            >
+                                <FolderUp className="w-4 h-4 text-telegram-primary" />
+                                Upload Folder...
+                            </button>
+                        </div>
+                    )}
+                </div>
+
                 {selectedIds.length > 0 && (
                     <div className="flex items-center gap-2 mr-4 animate-in fade-in slide-in-from-top-2">
                         <span className="text-xs text-telegram-subtext mr-2">{selectedIds.length} Selected</span>

@@ -491,6 +491,8 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     searchTerm={searchTerm}
                     onSearchChange={setSearchTerm}
                     onSettingsClick={() => setShowSettings(true)}
+                    onManualUpload={handleManualUpload}
+                    onFolderUpload={handleFolderUpload}
                 />
                 {searchTerm.length > 2 && (
                     <div className="px-6 pt-4 pb-0">

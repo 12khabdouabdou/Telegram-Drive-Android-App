@@ -1,9 +1,10 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, ChevronDown, Cloud } from 'lucide-react';
+import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, ChevronDown, Cloud, FilePlus, FolderUp, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { open } from '@tauri-apps/plugin-shell';
+import { open as openShell } from '@tauri-apps/plugin-shell';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { BottomNavBar } from './BottomNavBar';
@@ -63,7 +64,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     handleFolderRename
   } = useTelegramConnection(logoutHandler);
 
-  const { handleManualUpload, handleDropUpload } = useFileUpload(activeFolderId, store);
+  const { handleManualUpload, handleFolderUpload, handleDropUpload } = useFileUpload(activeFolderId, store);
   const { queueDownload } = useFileDownload(store);
 
   // Listen for shared files from Android Intent
@@ -129,6 +130,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
   // Folder action menu state (replaces swipe-to-reveal)
   const [folderActionMenu, setFolderActionMenu] = useState<TelegramFolder | null>(null);
+  const [showUploadMenu, setShowUploadMenu] = useState(false);
 
   const buildFolderActions = useCallback((folder: TelegramFolder): ActionItem[] => [
     {
@@ -237,7 +239,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={handleManualUpload}
+                  onClick={() => setShowUploadMenu(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-telegram-primary text-black hover:bg-telegram-primary/95 border border-telegram-primary/10 active:scale-95 transition-all duration-200"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
@@ -365,16 +367,49 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                     </select>
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <label className="text-xs font-medium">Folders to Monitor</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Camera, Screenshots"
-                      value={settings.autoBackupFolders?.join(', ') || ''}
-                      onChange={(e) => updateSetting('autoBackupFolders', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-                      className="w-full bg-telegram-bg border border-telegram-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-telegram-primary"
-                    />
-                    <p className="text-[10px] text-telegram-subtext mt-1">Comma-separated (leave empty for all folders)</p>
+                    <div className="flex flex-wrap gap-2">
+                      {(!settings.autoBackupFolders || settings.autoBackupFolders.length === 0) ? (
+                        <div className="text-[10px] text-telegram-subtext px-2 py-1 bg-telegram-bg border border-telegram-border rounded-lg">
+                          All folders (default)
+                        </div>
+                      ) : (
+                        settings.autoBackupFolders.map((folder, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-telegram-primary/10 text-telegram-primary border border-telegram-primary/20 rounded-lg text-[10px] font-medium">
+                            <span className="truncate max-w-[120px]">{folder}</span>
+                            <button
+                              onClick={() => {
+                                const newFolders = [...settings.autoBackupFolders];
+                                newFolders.splice(idx, 1);
+                                updateSetting('autoBackupFolders', newFolders);
+                              }}
+                              className="hover:bg-telegram-primary/20 rounded-full p-0.5 transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                      <button
+                        onClick={async () => {
+                          const selected = await openDialog({ directory: true, multiple: false });
+                          if (selected) {
+                            const folderPath = Array.isArray(selected) ? selected[0] : selected;
+                            const folderName = folderPath.split(/[/\\]/).pop() || folderPath;
+                            const newFolders = settings.autoBackupFolders ? [...settings.autoBackupFolders] : [];
+                            if (!newFolders.includes(folderName)) {
+                              newFolders.push(folderName);
+                              updateSetting('autoBackupFolders', newFolders);
+                            }
+                          }
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-telegram-hover/30 text-telegram-text border border-telegram-border rounded-lg text-[10px] font-medium hover:bg-telegram-hover/50 transition-colors"
+                      >
+                        <FolderUp className="w-3 h-3" /> Add Folder
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-telegram-subtext mt-1">Select specific folders to monitor, or leave empty for all.</p>
                   </div>
 
                   <div className="flex items-center justify-between py-2">
@@ -562,7 +597,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   <p className="text-xs font-semibold text-telegram-text">Cameron Amer</p>
 
                   <button
-                    onClick={(e) => { e.preventDefault(); open('https://www.cameronamer.com'); }}
+                    onClick={(e) => { e.preventDefault(); openShell('https://www.cameronamer.com'); }}
                     className="flex items-center justify-center gap-1.5 text-[11px] text-telegram-primary hover:text-telegram-primary/80 transition-colors cursor-pointer"
                   >
                     <Globe className="w-3 h-3" />
@@ -570,7 +605,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   </button>
 
                   <button
-                    onClick={(e) => { e.preventDefault(); open('https://github.com/caamer20/telegram-drive'); }}
+                    onClick={(e) => { e.preventDefault(); openShell('https://github.com/caamer20/telegram-drive'); }}
                     className="flex items-center justify-center gap-1.5 text-[11px] text-telegram-primary hover:text-telegram-primary/80 transition-colors cursor-pointer"
                   >
                     <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
@@ -693,6 +728,32 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
           title={folderActionMenu.name}
           actions={buildFolderActions(folderActionMenu)}
           onClose={() => setFolderActionMenu(null)}
+        />
+      )}
+
+      {/* Upload Action Sheet */}
+      {showUploadMenu && (
+        <ActionPopover
+          title="Upload Options"
+          actions={[
+            {
+              label: 'Upload Files',
+              icon: <FilePlus className="w-4 h-4" />,
+              onClick: () => {
+                setShowUploadMenu(false);
+                handleManualUpload();
+              }
+            },
+            {
+              label: 'Upload Folder',
+              icon: <FolderUp className="w-4 h-4" />,
+              onClick: () => {
+                setShowUploadMenu(false);
+                handleFolderUpload();
+              }
+            }
+          ]}
+          onClose={() => setShowUploadMenu(false)}
         />
       )}
 
