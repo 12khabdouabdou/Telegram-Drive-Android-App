@@ -624,6 +624,7 @@ pub fn run() {
             cmd_list_cached_files,
             cmd_remove_cached_path,
             crate::auto_backup::cmd_toggle_auto_backup,
+            crate::auto_backup::cmd_open_android_folder_picker,
             crate::share_intent::cmd_get_pending_shared_files,
         ])
         .build(tauri::generate_context!())

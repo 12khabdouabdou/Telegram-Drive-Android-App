@@ -444,7 +444,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                         <button
                           onClick={async () => {
                             if (isAndroid) {
-                              setShowFolderInput(true);
+                              invoke('cmd_open_android_folder_picker').catch(console.error);
                               return;
                             }
                             try {

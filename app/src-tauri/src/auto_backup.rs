@@ -184,6 +184,18 @@ pub fn cmd_toggle_auto_backup(config: AutoBackupConfig) -> Result<(), String> {
                     "(Landroid/content/Intent;)Landroid/content/ComponentName;",
                     &[jni::objects::JValue::from(&intent)],
                 );
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_clear();
+                    let _ = env.call_method(
+                        &ctx,
+                        "startService",
+                        "(Landroid/content/Intent;)Landroid/content/ComponentName;",
+                        &[jni::objects::JValue::from(&intent)],
+                    );
+                    if env.exception_check().unwrap_or(false) {
+                        let _ = env.exception_clear();
+                    }
+                }
             } else {
                 let _ = env.call_method(
                     &ctx,
@@ -191,6 +203,9 @@ pub fn cmd_toggle_auto_backup(config: AutoBackupConfig) -> Result<(), String> {
                     "(Landroid/content/Intent;)Z",
                     &[jni::objects::JValue::from(&intent)],
                 );
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_clear();
+                }
             }
             Ok(())
         })();
@@ -212,11 +227,27 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
             let mut pending_files = Vec::new();
+            let mut pending_count = 0;
+            let mut completed_count = 0;
 
             // Read pending
             if let Some(db_pool) = app_handle.try_state::<crate::db::DbConnection>() {
                 let result: Result<Vec<(i64, String)>, String> = async {
                     let conn = db_pool.lock().await;
+                    
+                    // Query counts
+                    if let Ok(mut stmt) = conn.prepare("SELECT status, count(*) FROM auto_backups GROUP BY status") {
+                        while let Ok(sqlite::State::Row) = stmt.next() {
+                            let status = stmt.read::<String, _>(0).unwrap_or_default();
+                            let count = stmt.read::<i64, _>(1).unwrap_or(0);
+                            if status == "pending" {
+                                pending_count = count;
+                            } else if status == "completed" {
+                                completed_count = count;
+                            }
+                        }
+                    }
+
                     let mut stmt = conn.prepare("SELECT id, file_path FROM auto_backups WHERE status = 'pending' LIMIT 5").map_err(|e| e.to_string())?;
                     let mut files = Vec::new();
                     while let Ok(sqlite::State::Row) = stmt.next() {
@@ -229,6 +260,34 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
 
                 if let Ok(files) = result {
                     pending_files = files;
+                }
+            }
+            
+            #[cfg(target_os = "android")]
+            if let Ok(ctx_obj) = ndk_context::android_context() {
+                if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx_obj.vm().cast()) } {
+                    if let Ok(mut env) = vm.attach_current_thread() {
+                        let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };
+                        if let Ok(class_loader) = env.call_method(&ctx, "getClassLoader", "()Ljava/lang/ClassLoader;", &[]) {
+                            if let Ok(class_loader_obj) = class_loader.l() {
+                                if let Ok(class_name) = env.new_string("com.cameronamer.telegramdrive.AutoBackupService") {
+                                    if let Ok(class_obj) = env.call_method(&class_loader_obj, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", &[jni::objects::JValue::from(&class_name)]) {
+                                        if let Ok(j_class_obj) = class_obj.l() {
+                                            let j_class: jni::objects::JClass = j_class_obj.into();
+                                            let _ = env.call_static_method(&j_class, "updateNotificationStats", "(Landroid/content/Context;II)V", &[
+                                                jni::objects::JValue::from(&ctx),
+                                                jni::objects::JValue::Int(pending_count as i32),
+                                                jni::objects::JValue::Int(completed_count as i32)
+                                            ]);
+                                            if env.exception_check().unwrap_or(false) {
+                                                let _ = env.exception_clear();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -274,4 +333,35 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
             }
         }
     });
+}
+
+#[tauri::command]
+pub fn cmd_open_android_folder_picker() -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        let ctx = ndk_context::android_context();
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.map_err(|e| e.to_string())?;
+        let mut env = vm.attach_current_thread().map_err(|e| e.to_string())?;
+        let activity_obj = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
+        
+        let _ = env.call_method(&activity_obj, "openFolderPicker", "()V", &[]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "C" fn Java_com_cameronamer_telegramdrive_MainActivity_onFolderSelected(
+    mut env: jni::JNIEnv,
+    _this: jni::objects::JObject,
+    folder_name: jni::objects::JString,
+) {
+    if let Ok(name) = env.get_string(&folder_name).map(|s| s.to_string_lossy().into_owned()) {
+        log::info!("JNI: Android folder selected: {}", name);
+        if let Ok(guard) = crate::share_intent::APP_HANDLE.lock() {
+            if let Some(app) = guard.as_ref() {
+                let _ = app.emit("android-folder-picked", name);
+            }
+        }
+    }
 }
