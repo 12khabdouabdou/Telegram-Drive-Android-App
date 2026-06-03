@@ -1,42 +1,24 @@
 import { useState, useEffect } from 'react';
 
 /**
- * Network detection for Tauri apps using lightweight backend check
+ * Network detection for Tauri apps.
  * 
- * Uses cmd_is_network_available which does a simple TCP connection test
- * to Telegram servers without using grammers (avoids stack overflow).
- * 
- * Polls every 10 seconds - very lightweight (~2ms per check).
+ * Uses native browser events to detect online/offline state without draining 
+ * the mobile battery via continuous TCP polling.
  */
 export function useNetworkStatus() {
-    const [isOnline, setIsOnline] = useState(true);
+    const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
     useEffect(() => {
-        let interval: ReturnType<typeof setInterval> | null = null;
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
 
-        // Import Tauri invoke
-        import('@tauri-apps/api/core').then(({ invoke }) => {
-            // Check network status
-            const checkNetwork = async () => {
-                try {
-                    // Use the lightweight TCP check (no grammers involved)
-                    const available = await invoke<boolean>('cmd_is_network_available');
-                    setIsOnline(available);
-                } catch (error) {
-                    // If the command fails, assume offline
-                    setIsOnline(false);
-                }
-            };
-
-            // Initial check
-            checkNetwork();
-
-            // Poll every 10 seconds (very lightweight, ~2ms per check)
-            interval = setInterval(checkNetwork, 10000);
-        });
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
 
         return () => {
-            if (interval) clearInterval(interval);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
         };
     }, []);
 
