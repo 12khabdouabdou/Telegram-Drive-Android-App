@@ -1,12 +1,12 @@
-use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder, cookie::Cookie};
-use crate::commands::TelegramState;
 use crate::commands::utils::resolve_peer;
+use crate::commands::TelegramState;
 use crate::db::DbConnection;
 use crate::server::parse_range_header;
+use actix_web::{cookie::Cookie, get, post, web, HttpRequest, HttpResponse, Responder};
 use grammers_client::types::Media;
-use sha2::{Sha256, Digest};
-use std::sync::Arc;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use std::sync::Arc;
 
 #[derive(Clone)]
 struct SharedLinkRow {
@@ -26,8 +26,6 @@ struct VerifyForm {
     password: String,
 }
 
-
-
 fn generate_cookie_val(token: &str, password_hash: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
@@ -35,7 +33,10 @@ fn generate_cookie_val(token: &str, password_hash: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-async fn get_share_by_token(db: &DbConnection, token: &str) -> Result<Option<SharedLinkRow>, String> {
+async fn get_share_by_token(
+    db: &DbConnection,
+    token: &str,
+) -> Result<Option<SharedLinkRow>, String> {
     let conn = db.lock().await;
     let mut stmt = conn
         .prepare(
@@ -43,17 +44,29 @@ async fn get_share_by_token(db: &DbConnection, token: &str) -> Result<Option<Sha
              FROM shared_links WHERE id = ?"
         )
         .map_err(|e| e.to_string())?;
-    
+
     stmt.bind((1, token)).map_err(|e| e.to_string())?;
 
     if let sqlite::State::Row = stmt.next().map_err(|e| e.to_string())? {
         let id = stmt.read::<String, _>("id").map_err(|e| e.to_string())?;
         let folder_id = stmt.read::<Option<i64>, _>("folder_id").ok().flatten();
-        let message_id = stmt.read::<i64, _>("message_id").map_err(|e| e.to_string())? as i32;
-        let file_name = stmt.read::<String, _>("file_name").map_err(|e| e.to_string())?;
-        let file_size = stmt.read::<i64, _>("file_size").map_err(|e| e.to_string())?;
-        let password_hash = stmt.read::<Option<String>, _>("password_hash").ok().flatten();
-        let password_salt = stmt.read::<Option<String>, _>("password_salt").ok().flatten();
+        let message_id = stmt
+            .read::<i64, _>("message_id")
+            .map_err(|e| e.to_string())? as i32;
+        let file_name = stmt
+            .read::<String, _>("file_name")
+            .map_err(|e| e.to_string())?;
+        let file_size = stmt
+            .read::<i64, _>("file_size")
+            .map_err(|e| e.to_string())?;
+        let password_hash = stmt
+            .read::<Option<String>, _>("password_hash")
+            .ok()
+            .flatten();
+        let password_salt = stmt
+            .read::<Option<String>, _>("password_salt")
+            .ok()
+            .flatten();
         let expires_at = stmt.read::<Option<i64>, _>("expires_at").ok().flatten();
         let revoked = stmt.read::<i64, _>("revoked").map_err(|e| e.to_string())? != 0;
 
@@ -78,7 +91,7 @@ fn render_password_form(file_name: &str, token: &str, error: Option<&str>) -> Ht
         Some(err) => format!("<div class=\"error\">{}</div>", err),
         None => "".to_string(),
     };
-    
+
     let html = format!(
         r#"<!DOCTYPE html>
 <html>
@@ -180,28 +193,28 @@ async fn get_shared_file(
     tg_state: web::Data<Arc<TelegramState>>,
 ) -> impl Responder {
     let token = path.into_inner();
-    
+
     let row = match get_share_by_token(&db_conn, &token).await {
         Ok(Some(r)) => r,
         Ok(None) => return HttpResponse::NotFound().body("Shared link not found"),
         Err(e) => {
             log::error!("DB error resolving token {}: {}", token, e);
-            return HttpResponse::InternalServerError().body("Internal server error")
+            return HttpResponse::InternalServerError().body("Internal server error");
         }
     };
-    
+
     // Check validation (revocation and expiration)
     if row.revoked {
         return HttpResponse::NotFound().body("This shared link has been revoked");
     }
-    
+
     if let Some(expiry) = row.expires_at {
         let now = chrono::Utc::now().timestamp();
         if expiry < now {
             return HttpResponse::Gone().body("This shared link has expired");
         }
     }
-    
+
     // Check password protection
     if let Some(hash) = &row.password_hash {
         let mut authenticated = false;
@@ -211,19 +224,19 @@ async fn get_shared_file(
                 authenticated = true;
             }
         }
-        
+
         if !authenticated {
             return render_password_form(&row.file_name, &token, None);
         }
     }
-    
+
     // Retrieve and stream the file from Telegram
     let client_opt = { tg_state.client.lock().await.clone() };
     let client = match client_opt {
         Some(c) => c,
         None => return HttpResponse::ServiceUnavailable().body("Telegram client is not connected"),
     };
-    
+
     let peer = match resolve_peer(&client, row.folder_id, &tg_state.peer_cache).await {
         Ok(p) => p,
         Err(e) => {
@@ -231,7 +244,7 @@ async fn get_shared_file(
             return HttpResponse::InternalServerError().body("Failed to locate folder");
         }
     };
-    
+
     match client.get_messages_by_id(peer, &[row.message_id]).await {
         Ok(messages) => {
             if let Some(Some(msg)) = messages.first() {
@@ -241,7 +254,10 @@ async fn get_shared_file(
                         _ => 0,
                     };
                     let mime = match &media {
-                        Media::Document(d) => d.mime_type().unwrap_or("application/octet-stream").to_string(),
+                        Media::Document(d) => d
+                            .mime_type()
+                            .unwrap_or("application/octet-stream")
+                            .to_string(),
                         _ => "application/octet-stream".to_string(),
                     };
                     let filename = &row.file_name;
@@ -252,7 +268,9 @@ async fn get_shared_file(
                     let mut is_range = false;
 
                     if size > 0 {
-                        if let Some(range_header) = req.headers().get(actix_web::http::header::RANGE) {
+                        if let Some(range_header) =
+                            req.headers().get(actix_web::http::header::RANGE)
+                        {
                             if let Ok(range_str) = range_header.to_str() {
                                 if let Some((start, end)) = parse_range_header(range_str, size) {
                                     start_byte = start;
@@ -269,80 +287,36 @@ async fn get_shared_file(
                         size
                     };
 
-                    let mut download_iter = client.iter_download(&media);
-                    let mut bytes_to_skip = 0;
-
-                    if start_byte > 0 {
-                        const MIN_CHUNK_SIZE: i32 = 4096;
-                        const MAX_CHUNK_SIZE: i32 = 512 * 1024;
-                        let chunk_index = (start_byte / MIN_CHUNK_SIZE as u64) as i32;
-                        download_iter = download_iter
-                            .chunk_size(MIN_CHUNK_SIZE)
-                            .skip_chunks(chunk_index)
-                            .chunk_size(MAX_CHUNK_SIZE);
-                        bytes_to_skip = (start_byte - (chunk_index as u64 * MIN_CHUNK_SIZE as u64)) as usize;
-                    }
-
-                    let stream = async_stream::stream! {
-                        let mut skipped = 0;
-                        let mut total_yielded = 0;
-
-                        while let Some(chunk) = download_iter.next().await.transpose() {
-                            match chunk {
-                                Ok(data) => {
-                                    let mut data_slice = data;
-                                    
-                                    // Handle skipping of bytes for unaligned start
-                                    if skipped < bytes_to_skip {
-                                        let to_skip = bytes_to_skip - skipped;
-                                        if data_slice.len() <= to_skip {
-                                            skipped += data_slice.len();
-                                            continue;
-                                        } else {
-                                            data_slice = data_slice[to_skip..].to_vec();
-                                            skipped = bytes_to_skip;
-                                        }
-                                    }
-
-                                    // Handle limit (content_length)
-                                    if total_yielded + data_slice.len() as u64 > content_length {
-                                        let allowed = (content_length - total_yielded) as usize;
-                                        if allowed > 0 {
-                                            yield Ok::<_, actix_web::Error>(web::Bytes::from(data_slice[..allowed].to_vec()));
-                                            total_yielded += allowed as u64;
-                                        }
-                                        break;
-                                    } else {
-                                        let len = data_slice.len() as u64;
-                                        yield Ok::<_, actix_web::Error>(web::Bytes::from(data_slice));
-                                        total_yielded += len;
-                                        if total_yielded >= content_length {
-                                            break;
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("Share download stream error: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                        log::debug!("Share download request: Stream completed for token {} (yielded: {})", token, total_yielded);
-                    };
+                    let stream = crate::server::build_range_stream(
+                        &client,
+                        &media,
+                        start_byte,
+                        content_length,
+                        format!("Share download token {}", token),
+                    );
 
                     if is_range {
                         return HttpResponse::PartialContent()
                             .insert_header(("Content-Type", mime))
-                            .insert_header(("Content-Range", format!("bytes {}-{}/{}", start_byte, end_byte, size)))
+                            .insert_header((
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start_byte, end_byte, size),
+                            ))
                             .insert_header(("Content-Length", content_length.to_string()))
-                            .insert_header(("Content-Disposition", format!("attachment; filename=\"{}\"", filename)))
+                            .insert_header((
+                                "Content-Disposition",
+                                format!("attachment; filename=\"{}\"", filename),
+                            ))
                             .insert_header(("Accept-Ranges", "bytes"))
                             .streaming(stream);
                     } else {
                         return HttpResponse::Ok()
                             .insert_header(("Content-Type", mime))
                             .insert_header(("Content-Length", size.to_string()))
-                            .insert_header(("Content-Disposition", format!("attachment; filename=\"{}\"", filename)))
+                            .insert_header((
+                                "Content-Disposition",
+                                format!("attachment; filename=\"{}\"", filename),
+                            ))
                             .insert_header(("Accept-Ranges", "bytes"))
                             .streaming(stream);
                     }
@@ -364,25 +338,25 @@ async fn verify_shared_file_password(
     db_conn: web::Data<DbConnection>,
 ) -> impl Responder {
     let token = path.into_inner();
-    
+
     let row = match get_share_by_token(&db_conn, &token).await {
         Ok(Some(r)) => r,
         Ok(None) => return HttpResponse::NotFound().body("Shared link not found"),
         Err(e) => {
             log::error!("DB error resolving token {}: {}", token, e);
-            return HttpResponse::InternalServerError().body("Internal server error")
+            return HttpResponse::InternalServerError().body("Internal server error");
         }
     };
-    
+
     if row.revoked {
         return HttpResponse::NotFound().body("This shared link has been revoked");
     }
-    
+
     let hash = match &row.password_hash {
         Some(h) => h,
         None => return HttpResponse::BadRequest().body("No password required for this link"),
     };
-    
+
     if crate::commands::sharing::verify_password(&form.password, hash) {
         // Set short-lived secure session cookie
         let val = generate_cookie_val(&token, hash);
@@ -392,17 +366,21 @@ async fn verify_shared_file_password(
             .same_site(actix_web::cookie::SameSite::Strict)
             .max_age(actix_web::cookie::time::Duration::minutes(30))
             .finish();
-            
+
         HttpResponse::Found()
             .insert_header(("Location", format!("/d/{}", token)))
             .cookie(cookie)
             .finish()
     } else {
-        render_password_form(&row.file_name, &token, Some("Incorrect password. Please try again."))
+        render_password_form(
+            &row.file_name,
+            &token,
+            Some("Incorrect password. Please try again."),
+        )
     }
 }
 
 pub fn configure_share_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(get_shared_file)
-       .service(verify_shared_file_password);
+        .service(verify_shared_file_password);
 }

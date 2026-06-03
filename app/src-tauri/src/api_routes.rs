@@ -1,6 +1,6 @@
-use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
-use crate::commands::TelegramState;
 use crate::commands::utils::resolve_peer;
+use crate::commands::TelegramState;
+use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
 use grammers_client::types::{Media, Peer};
 use serde::Serialize;
 use std::sync::Arc;
@@ -28,21 +28,23 @@ fn json_error(code: &str, message: &str, status: u16) -> HttpResponse {
             message: message.to_string(),
         },
     };
-    HttpResponse::build(actix_web::http::StatusCode::from_u16(status).unwrap())
-        .json(body)
+    HttpResponse::build(actix_web::http::StatusCode::from_u16(status).unwrap()).json(body)
 }
 
 /// Validate X-API-Key header against stored hash
 fn check_auth(req: &HttpRequest, api_state: &web::Data<ApiState>) -> Result<(), HttpResponse> {
     let key_hash = match &api_state.key_hash {
         Some(h) => h,
-        None => return Err(json_error("NO_KEY_CONFIGURED", "No API key has been configured. Generate one in Settings.", 401)),
+        None => {
+            return Err(json_error(
+                "NO_KEY_CONFIGURED",
+                "No API key has been configured. Generate one in Settings.",
+                401,
+            ))
+        }
     };
 
-    let provided = req
-        .headers()
-        .get("X-API-Key")
-        .and_then(|v| v.to_str().ok());
+    let provided = req.headers().get("X-API-Key").and_then(|v| v.to_str().ok());
 
     match provided {
         Some(key) if crate::commands::api_settings::verify_key(key, key_hash) => Ok(()),
@@ -133,7 +135,9 @@ async fn api_list_files(
     };
 
     let query_string = req.query_string();
-    let has_folder_id = query_string.split('&').any(|p| p.starts_with("folder_id=") || p == "folder_id");
+    let has_folder_id = query_string
+        .split('&')
+        .any(|p| p.starts_with("folder_id=") || p == "folder_id");
 
     let mut peers_to_scan = Vec::new();
     if !has_folder_id {
@@ -167,7 +171,7 @@ async fn api_list_files(
                 }
             }
         }
-        
+
         let resolved = match resolve_peer(&client, parsed_id, &tg_state.peer_cache).await {
             Ok(p) => p,
             Err(e) => return json_error("PEER_ERROR", &e, 400),
@@ -181,7 +185,7 @@ async fn api_list_files(
         if let Some(offset_id) = query.offset_id {
             msgs = msgs.offset_id(offset_id);
         }
-        
+
         // When listing all, limit scan per folder to prevent rate limit timeouts
         if !has_folder_id {
             msgs = msgs.limit(100);
@@ -200,9 +204,11 @@ async fn api_list_files(
         while let Some(msg) = msgs.next().await.ok().flatten() {
             if let Some(doc) = msg.media() {
                 let (name, size, mime) = match doc {
-                    Media::Document(d) => {
-                        (d.name().to_string(), d.size(), d.mime_type().map(|s| s.to_string()))
-                    }
+                    Media::Document(d) => (
+                        d.name().to_string(),
+                        d.size(),
+                        d.mime_type().map(|s| s.to_string()),
+                    ),
                     Media::Photo(_) => ("Photo.jpg".to_string(), 0, Some("image/jpeg".into())),
                     _ => ("Unknown".to_string(), 0, None),
                 };
@@ -293,11 +299,10 @@ async fn api_list_files(
 
     // Sparse fieldsets
     let mut final_data = Vec::new();
-    let fields_list: Option<Vec<String>> = query.fields.as_ref().map(|f| {
-        f.split(',')
-            .map(|s| s.trim().to_string())
-            .collect()
-    });
+    let fields_list: Option<Vec<String>> = query
+        .fields
+        .as_ref()
+        .map(|f| f.split(',').map(|s| s.trim().to_string()).collect());
 
     for file in paginated_files {
         let mut map = serde_json::Map::new();
@@ -392,9 +397,11 @@ async fn api_get_file(
             if let Some(Some(msg)) = messages.first() {
                 if let Some(doc) = msg.media() {
                     let (name, size, mime) = match doc {
-                        Media::Document(d) => {
-                            (d.name().to_string(), d.size(), d.mime_type().map(|s| s.to_string()))
-                        }
+                        Media::Document(d) => (
+                            d.name().to_string(),
+                            d.size(),
+                            d.mime_type().map(|s| s.to_string()),
+                        ),
                         Media::Photo(_) => ("Photo.jpg".to_string(), 0, Some("image/jpeg".into())),
                         _ => ("Unknown".to_string(), 0, None),
                     };
@@ -447,7 +454,10 @@ async fn api_download_file(
                         _ => 0,
                     };
                     let mime = match &media {
-                        Media::Document(d) => d.mime_type().unwrap_or("application/octet-stream").to_string(),
+                        Media::Document(d) => d
+                            .mime_type()
+                            .unwrap_or("application/octet-stream")
+                            .to_string(),
                         _ => "application/octet-stream".to_string(),
                     };
                     let filename = match &media {
@@ -462,9 +472,13 @@ async fn api_download_file(
                     let mut is_range = false;
 
                     if size > 0 {
-                        if let Some(range_header) = req.headers().get(actix_web::http::header::RANGE) {
+                        if let Some(range_header) =
+                            req.headers().get(actix_web::http::header::RANGE)
+                        {
                             if let Ok(range_str) = range_header.to_str() {
-                                if let Some((start, end)) = crate::server::parse_range_header(range_str, size) {
+                                if let Some((start, end)) =
+                                    crate::server::parse_range_header(range_str, size)
+                                {
                                     start_byte = start;
                                     end_byte = end;
                                     is_range = true;
@@ -479,80 +493,36 @@ async fn api_download_file(
                         size
                     };
 
-                    let mut download_iter = client.iter_download(&media);
-                    let mut bytes_to_skip = 0;
-
-                    if start_byte > 0 {
-                        const MIN_CHUNK_SIZE: i32 = 4096;
-                        const MAX_CHUNK_SIZE: i32 = 512 * 1024;
-                        let chunk_index = (start_byte / MIN_CHUNK_SIZE as u64) as i32;
-                        download_iter = download_iter
-                            .chunk_size(MIN_CHUNK_SIZE)
-                            .skip_chunks(chunk_index)
-                            .chunk_size(MAX_CHUNK_SIZE);
-                        bytes_to_skip = (start_byte - (chunk_index as u64 * MIN_CHUNK_SIZE as u64)) as usize;
-                    }
-
-                    let stream = async_stream::stream! {
-                        let mut skipped = 0;
-                        let mut total_yielded = 0;
-
-                        while let Some(chunk) = download_iter.next().await.transpose() {
-                            match chunk {
-                                Ok(data) => {
-                                    let mut data_slice = data;
-                                    
-                                    // Handle skipping of bytes for unaligned start
-                                    if skipped < bytes_to_skip {
-                                        let to_skip = bytes_to_skip - skipped;
-                                        if data_slice.len() <= to_skip {
-                                            skipped += data_slice.len();
-                                            continue;
-                                        } else {
-                                            data_slice = data_slice[to_skip..].to_vec();
-                                            skipped = bytes_to_skip;
-                                        }
-                                    }
-
-                                    // Handle limit (content_length)
-                                    if total_yielded + data_slice.len() as u64 > content_length {
-                                        let allowed = (content_length - total_yielded) as usize;
-                                        if allowed > 0 {
-                                            yield Ok::<_, actix_web::Error>(web::Bytes::from(data_slice[..allowed].to_vec()));
-                                            total_yielded += allowed as u64;
-                                        }
-                                        break;
-                                    } else {
-                                        let len = data_slice.len() as u64;
-                                        yield Ok::<_, actix_web::Error>(web::Bytes::from(data_slice));
-                                        total_yielded += len;
-                                        if total_yielded >= content_length {
-                                            break;
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("API download stream error: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                        log::debug!("API download request: Stream completed for msg {} (yielded: {})", message_id, total_yielded);
-                    };
+                    let stream = crate::server::build_range_stream(
+                        &client,
+                        &media,
+                        start_byte,
+                        content_length,
+                        format!("API download {}", message_id),
+                    );
 
                     if is_range {
                         return HttpResponse::PartialContent()
                             .insert_header(("Content-Type", mime))
-                            .insert_header(("Content-Range", format!("bytes {}-{}/{}", start_byte, end_byte, size)))
+                            .insert_header((
+                                "Content-Range",
+                                format!("bytes {}-{}/{}", start_byte, end_byte, size),
+                            ))
                             .insert_header(("Content-Length", content_length.to_string()))
-                            .insert_header(("Content-Disposition", format!("attachment; filename=\"{}\"", filename)))
+                            .insert_header((
+                                "Content-Disposition",
+                                format!("attachment; filename=\"{}\"", filename),
+                            ))
                             .insert_header(("Accept-Ranges", "bytes"))
                             .streaming(stream);
                     } else {
                         return HttpResponse::Ok()
                             .insert_header(("Content-Type", mime))
                             .insert_header(("Content-Length", size.to_string()))
-                            .insert_header(("Content-Disposition", format!("attachment; filename=\"{}\"", filename)))
+                            .insert_header((
+                                "Content-Disposition",
+                                format!("attachment; filename=\"{}\"", filename),
+                            ))
                             .insert_header(("Accept-Ranges", "bytes"))
                             .streaming(stream);
                     }
@@ -600,15 +570,19 @@ async fn api_bulk_files(
         None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
     };
 
-    let ids: Vec<i32> = body.file_ids.iter().filter_map(|val| {
-        if let Some(i) = val.as_i64() {
-            Some(i as i32)
-        } else if let Some(s) = val.as_str() {
-            s.parse::<i32>().ok()
-        } else {
-            None
-        }
-    }).collect();
+    let ids: Vec<i32> = body
+        .file_ids
+        .iter()
+        .filter_map(|val| {
+            if let Some(i) = val.as_i64() {
+                Some(i as i32)
+            } else if let Some(s) = val.as_str() {
+                s.parse::<i32>().ok()
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let source_folder: Option<i64> = body.folder_id.as_ref().and_then(|val| {
         if let Some(i) = val.as_i64() {
@@ -620,15 +594,19 @@ async fn api_bulk_files(
         }
     });
 
-    let target_folder: Option<i64> = body.payload.as_ref().and_then(|p| p.folder_id.as_ref()).and_then(|val| {
-        if let Some(i) = val.as_i64() {
-            Some(i)
-        } else if let Some(s) = val.as_str() {
-            s.parse::<i64>().ok()
-        } else {
-            None
-        }
-    });
+    let target_folder: Option<i64> = body
+        .payload
+        .as_ref()
+        .and_then(|p| p.folder_id.as_ref())
+        .and_then(|val| {
+            if let Some(i) = val.as_i64() {
+                Some(i)
+            } else if let Some(s) = val.as_str() {
+                s.parse::<i64>().ok()
+            } else {
+                None
+            }
+        });
 
     match body.action.as_str() {
         "delete" => {
@@ -641,20 +619,33 @@ async fn api_bulk_files(
             }
         }
         "move" => {
-            let source_peer = match resolve_peer(&client, source_folder, &tg_state.peer_cache).await {
+            let source_peer = match resolve_peer(&client, source_folder, &tg_state.peer_cache).await
+            {
                 Ok(p) => p,
                 Err(e) => return json_error("PEER_ERROR", &e, 400),
             };
-            let target_peer = match resolve_peer(&client, target_folder, &tg_state.peer_cache).await {
+            let target_peer = match resolve_peer(&client, target_folder, &tg_state.peer_cache).await
+            {
                 Ok(p) => p,
                 Err(e) => return json_error("PEER_ERROR", &e, 400),
             };
             if source_folder != target_folder {
-                if let Err(e) = client.forward_messages(&target_peer, &ids, &source_peer).await {
-                    return json_error("MOVE_FORWARD_FAILED", &format!("Forward failed: {}", e), 500);
+                if let Err(e) = client
+                    .forward_messages(&target_peer, &ids, &source_peer)
+                    .await
+                {
+                    return json_error(
+                        "MOVE_FORWARD_FAILED",
+                        &format!("Forward failed: {}", e),
+                        500,
+                    );
                 }
                 if let Err(e) = client.delete_messages(&source_peer, &ids).await {
-                    return json_error("MOVE_DELETE_FAILED", &format!("Delete original failed: {}", e), 500);
+                    return json_error(
+                        "MOVE_DELETE_FAILED",
+                        &format!("Delete original failed: {}", e),
+                        500,
+                    );
                 }
             }
         }
@@ -708,11 +699,19 @@ async fn api_search_files(
 
     let search_q = match query.q.as_deref() {
         Some(q) if !q.trim().is_empty() => q,
-        _ => return json_error("INVALID_QUERY", "Search query parameter 'q' is required and cannot be empty", 400),
+        _ => {
+            return json_error(
+                "INVALID_QUERY",
+                "Search query parameter 'q' is required and cannot be empty",
+                400,
+            )
+        }
     };
 
     let query_string = req.query_string();
-    let has_folder_id = query_string.split('&').any(|p| p.starts_with("folder_id=") || p == "folder_id");
+    let has_folder_id = query_string
+        .split('&')
+        .any(|p| p.starts_with("folder_id=") || p == "folder_id");
 
     let mut peers_to_scan = Vec::new();
     if !has_folder_id {
@@ -744,7 +743,7 @@ async fn api_search_files(
                 }
             }
         }
-        
+
         let resolved = match resolve_peer(&client, parsed_id, &tg_state.peer_cache).await {
             Ok(p) => p,
             Err(e) => return json_error("PEER_ERROR", &e, 400),
@@ -758,13 +757,15 @@ async fn api_search_files(
         while let Some(msg) = msgs.next().await.ok().flatten() {
             if let Some(doc) = msg.media() {
                 let (name, size, mime) = match doc {
-                    Media::Document(d) => {
-                        (d.name().to_string(), d.size(), d.mime_type().map(|s| s.to_string()))
-                    }
+                    Media::Document(d) => (
+                        d.name().to_string(),
+                        d.size(),
+                        d.mime_type().map(|s| s.to_string()),
+                    ),
                     Media::Photo(_) => ("Photo.jpg".to_string(), 0, Some("image/jpeg".into())),
                     _ => ("Unknown".to_string(), 0, None),
                 };
-                
+
                 if name.to_lowercase().contains(&search_q.to_lowercase()) {
                     matching_files.push(ApiFile {
                         id: msg.id() as i64,
@@ -798,9 +799,9 @@ async fn api_search_files(
 /// Register all API routes on the Actix App
 pub fn configure_api(cfg: &mut web::ServiceConfig) {
     cfg.service(api_health)
-       .service(api_list_files)
-       .service(api_get_file)
-       .service(api_download_file)
-       .service(api_bulk_files)
-       .service(api_search_files);
+        .service(api_list_files)
+        .service(api_get_file)
+        .service(api_download_file)
+        .service(api_bulk_files)
+        .service(api_search_files);
 }
