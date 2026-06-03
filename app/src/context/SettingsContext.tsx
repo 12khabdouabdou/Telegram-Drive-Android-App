@@ -45,6 +45,9 @@ export interface Settings {
     autoBackupDestination: string;
     autoBackupMode: 'all' | 'new';
     autoBackupFolders: string[];
+
+    // ── Sharing ──────────────────────────────────────────
+    shareHost: string;
 }
 
 const defaultSettings: Settings = {
@@ -90,6 +93,9 @@ const defaultSettings: Settings = {
     autoBackupDestination: 'Auto-Backups',
     autoBackupMode: 'new',
     autoBackupFolders: ['DCIM/Camera', 'Pictures'],
+
+    // Sharing
+    shareHost: 'http://localhost',
 };
 
 interface SettingsContextType {

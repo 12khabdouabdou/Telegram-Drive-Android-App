@@ -96,7 +96,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [shares, setShares] = useState<ShareInfo[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
-    const [globalDomain, setGlobalDomain] = useState('');
 
     const fetchShares = useCallback(async () => {
         setRefreshing(true);
@@ -138,9 +137,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         const share = shares.find(s => s.id === id);
         if (!share) return;
         
-        let link = `http://localhost:14201/d/${share.id}`;
-        if (globalDomain.trim()) {
-            link = `http://${globalDomain.trim()}/d/${share.id}`;
+        let link = `${settings.shareHost}/d/${share.id}`;
+        if (settings.shareHost === 'http://localhost') {
+            link = `http://localhost:14201/d/${share.id}`;
         }
         
         navigator.clipboard.writeText(link);
@@ -1110,16 +1109,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                         </div>
 
                                         <div className="bg-telegram-hover/30 border border-telegram-border/50 rounded-lg p-3 space-y-2">
-                                            <div className="text-[11px] font-semibold text-telegram-text flex items-center gap-1">🌐 Tailscale/LAN IP Override</div>
+                                            <div className="text-[11px] font-semibold text-telegram-text flex items-center gap-1">🌐 Public Share Domain</div>
                                             <input
                                                 type="text"
-                                                placeholder="e.g. 100.115.22.45 or my-pc:14201"
-                                                value={globalDomain}
-                                                onChange={(e) => setGlobalDomain(e.target.value)}
+                                                placeholder="e.g. http://100.115.22.45 or https://drive.domain.com"
+                                                value={settings.shareHost}
+                                                onChange={(e) => updateSetting('shareHost', e.target.value)}
                                                 className="w-full bg-telegram-surface border border-telegram-border rounded-md px-2.5 py-1.5 text-xs text-telegram-text focus:outline-none focus:border-telegram-primary/50 placeholder:text-telegram-subtext/40"
                                             />
                                             <p className="text-[10px] text-telegram-subtext">
-                                                Automatically replaces 'localhost:14201' with this IP/domain when copying.
+                                                Base URL for generating shareable links. Defaults to http://localhost
                                             </p>
                                         </div>
 

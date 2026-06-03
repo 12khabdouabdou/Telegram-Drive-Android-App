@@ -118,7 +118,10 @@ pub fn restart_api_server(app: &tauri::AppHandle) {
         let sys = actix_rt::System::new();
         sys.block_on(async move {
             let api_state_data = actix_web::web::Data::new(tg_state);
-            let api_state = actix_web::web::Data::new(api_routes::ApiState { key_hash });
+            let api_state = actix_web::web::Data::new(api_routes::ApiState { 
+                key_hash,
+                rate_limiter: std::sync::Arc::new(tokio::sync::Mutex::new(api_routes::RateLimiter::new())),
+            });
 
             log::info!("Starting REST API server on port {}", api_port);
 

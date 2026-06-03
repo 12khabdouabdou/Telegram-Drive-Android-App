@@ -3,11 +3,53 @@ use crate::commands::TelegramState;
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
 use grammers_client::types::{Media, Peer};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
+
+/// Rate limiter state
+pub struct RateLimiter {
+    counts: HashMap<String, (u32, Instant)>,
+}
+
+impl RateLimiter {
+    pub fn new() -> Self {
+        Self {
+            counts: HashMap::new(),
+        }
+    }
+
+    /// Returns (allowed, remaining, reset_in_secs)
+    pub fn check(&mut self, key: &str, limit: u32, window: Duration) -> (bool, u32, u64) {
+        let now = Instant::now();
+        
+        // Clean up old entries periodically or inline if needed
+        self.counts.retain(|_, &mut (_, ts)| now.duration_since(ts) <= window);
+
+        let entry = self.counts.entry(key.to_string()).or_insert((0, now));
+        let elapsed = now.duration_since(entry.1);
+
+        if elapsed > window {
+            entry.0 = 1;
+            entry.1 = now;
+            (true, limit - 1, window.as_secs())
+        } else if entry.0 < limit {
+            entry.0 += 1;
+            let remaining = limit - entry.0;
+            let reset_in = (window - elapsed).as_secs();
+            (true, remaining, reset_in)
+        } else {
+            let reset_in = (window - elapsed).as_secs();
+            (false, 0, reset_in)
+        }
+    }
+}
 
 /// Shared state for the API server — holds the key hash for auth checks
 pub struct ApiState {
     pub key_hash: Option<String>,
+    pub rate_limiter: Arc<Mutex<RateLimiter>>,
 }
 
 #[derive(Serialize)]
@@ -31,8 +73,8 @@ fn json_error(code: &str, message: &str, status: u16) -> HttpResponse {
     HttpResponse::build(actix_web::http::StatusCode::from_u16(status).unwrap()).json(body)
 }
 
-/// Validate X-API-Key header against stored hash
-fn check_auth(req: &HttpRequest, api_state: &web::Data<ApiState>) -> Result<(), HttpResponse> {
+/// Validate X-API-Key header against stored hash and apply rate limiting
+async fn check_auth_and_rate_limit(req: &HttpRequest, api_state: &web::Data<ApiState>) -> Result<(u32, u64), HttpResponse> {
     let key_hash = match &api_state.key_hash {
         Some(h) => h,
         None => {
@@ -46,11 +88,44 @@ fn check_auth(req: &HttpRequest, api_state: &web::Data<ApiState>) -> Result<(), 
 
     let provided = req.headers().get("X-API-Key").and_then(|v| v.to_str().ok());
 
-    match provided {
-        Some(key) if crate::commands::api_settings::verify_key(key, key_hash) => Ok(()),
-        Some(_) => Err(json_error("UNAUTHORIZED", "Invalid API key", 401)),
-        None => Err(json_error("UNAUTHORIZED", "Missing X-API-Key header", 401)),
+    let key_valid = match provided {
+        Some(key) if crate::commands::api_settings::verify_key(key, key_hash) => true,
+        Some(_) => false,
+        None => false,
+    };
+
+    if !key_valid {
+        return Err(if provided.is_some() {
+            json_error("UNAUTHORIZED", "Invalid API key", 401)
+        } else {
+            json_error("UNAUTHORIZED", "Missing X-API-Key header", 401)
+        });
     }
+
+    // Rate limiting: 100 requests per 60 seconds per IP or Key
+    // Using the key since it's an API key
+    let key = provided.unwrap_or("unknown");
+    let mut rl = api_state.rate_limiter.lock().await;
+    let (allowed, remaining, reset_in) = rl.check(key, 100, Duration::from_secs(60));
+    
+    if !allowed {
+        let mut resp = json_error("TOO_MANY_REQUESTS", "Rate limit exceeded. Try again later.", 429);
+        resp.headers_mut().insert(
+            actix_web::http::header::HeaderName::from_static("x-ratelimit-limit"),
+            actix_web::http::header::HeaderValue::from_static("100"),
+        );
+        resp.headers_mut().insert(
+            actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
+            actix_web::http::header::HeaderValue::from_str("0").unwrap(),
+        );
+        resp.headers_mut().insert(
+            actix_web::http::header::HeaderName::from_static("x-ratelimit-reset"),
+            actix_web::http::header::HeaderValue::from_str(&reset_in.to_string()).unwrap(),
+        );
+        return Err(resp);
+    }
+
+    Ok((remaining, reset_in))
 }
 
 // ──────────────────────────────── Endpoints ────────────────────────────────
@@ -124,9 +199,10 @@ async fn api_list_files(
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
 ) -> impl Responder {
-    if let Err(e) = check_auth(&req, &api_state) {
-        return e;
-    }
+    let (rl_remaining, rl_reset) = match check_auth_and_rate_limit(&req, &api_state).await {
+        Ok(vals) => vals,
+        Err(e) => return e,
+    };
 
     let client_opt = { tg_state.client.lock().await.clone() };
     let client = match client_opt {
@@ -354,11 +430,11 @@ async fn api_list_files(
     );
     response.headers_mut().insert(
         actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
-        actix_web::http::header::HeaderValue::from_static("99"),
+        actix_web::http::header::HeaderValue::from_str(&rl_remaining.to_string()).unwrap(),
     );
     response.headers_mut().insert(
         actix_web::http::header::HeaderName::from_static("x-ratelimit-reset"),
-        actix_web::http::header::HeaderValue::from_static("60"),
+        actix_web::http::header::HeaderValue::from_str(&rl_reset.to_string()).unwrap(),
     );
     response
 }
@@ -376,9 +452,10 @@ async fn api_get_file(
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
 ) -> impl Responder {
-    if let Err(e) = check_auth(&req, &api_state) {
-        return e;
-    }
+    let (rl_remaining, rl_reset) = match check_auth_and_rate_limit(&req, &api_state).await {
+        Ok(vals) => vals,
+        Err(e) => return e,
+    };
 
     let message_id = path.into_inner() as i32;
     let client_opt = { tg_state.client.lock().await.clone() };
@@ -405,7 +482,7 @@ async fn api_get_file(
                         Media::Photo(_) => ("Photo.jpg".to_string(), 0, Some("image/jpeg".into())),
                         _ => ("Unknown".to_string(), 0, None),
                     };
-                    return HttpResponse::Ok().json(ApiFile {
+                    let mut response = HttpResponse::Ok().json(ApiFile {
                         id: msg.id() as i64,
                         folder_id: query.folder_id,
                         name,
@@ -413,6 +490,19 @@ async fn api_get_file(
                         mime_type: mime,
                         created_at: msg.date().to_string(),
                     });
+                    response.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("x-ratelimit-limit"),
+                        actix_web::http::header::HeaderValue::from_static("100"),
+                    );
+                    response.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
+                        actix_web::http::header::HeaderValue::from_str(&rl_remaining.to_string()).unwrap(),
+                    );
+                    response.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("x-ratelimit-reset"),
+                        actix_web::http::header::HeaderValue::from_str(&rl_reset.to_string()).unwrap(),
+                    );
+                    return response;
                 }
             }
             json_error("NOT_FOUND", "File not found", 404)
@@ -429,9 +519,10 @@ async fn api_download_file(
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
 ) -> impl Responder {
-    if let Err(e) = check_auth(&req, &api_state) {
-        return e;
-    }
+    let (rl_remaining, rl_reset) = match check_auth_and_rate_limit(&req, &api_state).await {
+        Ok(vals) => vals,
+        Err(e) => return e,
+    };
 
     let message_id = path.into_inner() as i32;
     let client_opt = { tg_state.client.lock().await.clone() };
@@ -514,6 +605,9 @@ async fn api_download_file(
                                 format!("attachment; filename=\"{}\"", filename),
                             ))
                             .insert_header(("Accept-Ranges", "bytes"))
+                            .insert_header(("x-ratelimit-limit", "100"))
+                            .insert_header(("x-ratelimit-remaining", rl_remaining.to_string()))
+                            .insert_header(("x-ratelimit-reset", rl_reset.to_string()))
                             .streaming(stream);
                     } else {
                         return HttpResponse::Ok()
@@ -524,6 +618,9 @@ async fn api_download_file(
                                 format!("attachment; filename=\"{}\"", filename),
                             ))
                             .insert_header(("Accept-Ranges", "bytes"))
+                            .insert_header(("x-ratelimit-limit", "100"))
+                            .insert_header(("x-ratelimit-remaining", rl_remaining.to_string()))
+                            .insert_header(("x-ratelimit-reset", rl_reset.to_string()))
                             .streaming(stream);
                     }
                 }
@@ -560,9 +657,10 @@ async fn api_bulk_files(
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
 ) -> impl Responder {
-    if let Err(e) = check_auth(&req, &api_state) {
-        return e;
-    }
+    let (rl_remaining, rl_reset) = match check_auth_and_rate_limit(&req, &api_state).await {
+        Ok(vals) => vals,
+        Err(e) => return e,
+    };
 
     let client_opt = { tg_state.client.lock().await.clone() };
     let client = match client_opt {
@@ -662,11 +760,11 @@ async fn api_bulk_files(
     );
     response.headers_mut().insert(
         actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
-        actix_web::http::header::HeaderValue::from_static("99"),
+        actix_web::http::header::HeaderValue::from_str(&rl_remaining.to_string()).unwrap(),
     );
     response.headers_mut().insert(
         actix_web::http::header::HeaderName::from_static("x-ratelimit-reset"),
-        actix_web::http::header::HeaderValue::from_static("60"),
+        actix_web::http::header::HeaderValue::from_str(&rl_reset.to_string()).unwrap(),
     );
     response
 }
@@ -687,9 +785,10 @@ async fn api_search_files(
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
 ) -> impl Responder {
-    if let Err(e) = check_auth(&req, &api_state) {
-        return e;
-    }
+    let (rl_remaining, rl_reset) = match check_auth_and_rate_limit(&req, &api_state).await {
+        Ok(vals) => vals,
+        Err(e) => return e,
+    };
 
     let client_opt = { tg_state.client.lock().await.clone() };
     let client = match client_opt {
@@ -787,11 +886,11 @@ async fn api_search_files(
     );
     response.headers_mut().insert(
         actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
-        actix_web::http::header::HeaderValue::from_static("99"),
+        actix_web::http::header::HeaderValue::from_str(&rl_remaining.to_string()).unwrap(),
     );
     response.headers_mut().insert(
         actix_web::http::header::HeaderName::from_static("x-ratelimit-reset"),
-        actix_web::http::header::HeaderValue::from_static("60"),
+        actix_web::http::header::HeaderValue::from_str(&rl_reset.to_string()).unwrap(),
     );
     response
 }

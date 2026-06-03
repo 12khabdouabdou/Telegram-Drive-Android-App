@@ -5,12 +5,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { nativeShareOrCopy } from '../../../utils';
 
+import { useSettings } from '../../../context/SettingsContext';
+
 interface ShareDialogProps {
     file: TelegramFile;
     onClose: () => void;
 }
 
 export function ShareDialog({ file, onClose }: ShareDialogProps) {
+    const { settings } = useSettings();
     const [password, setPassword] = useState('');
     const [requirePassword, setRequirePassword] = useState(false);
     const [expiryType, setExpiryType] = useState<'never' | '1h' | '1d' | '7d' | 'custom'>('1d');
@@ -47,6 +50,7 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
                 fileSize: file.size,
                 password: pwdParam,
                 expiryHours,
+                shareHost: settings.shareHost,
             });
 
             setShareInfo(res);

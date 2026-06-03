@@ -51,6 +51,7 @@ pub async fn cmd_create_share(
     file_size: i64,
     password: Option<String>,
     expiry_hours: Option<i64>,
+    share_host: String,
     db_pool: State<'_, DbConnection>,
 ) -> Result<ShareInfo, String> {
     let token = generate_share_token();
@@ -100,7 +101,11 @@ pub async fn cmd_create_share(
 
     stmt.next().map_err(|e| e.to_string())?;
 
-    let link = format!("http://localhost:{}/d/{}", crate::STREAM_PORT, token);
+    let link = if share_host == "http://localhost" {
+        format!("http://localhost:{}/d/{}", crate::STREAM_PORT, token)
+    } else {
+        format!("{}/d/{}", share_host, token)
+    };
 
     Ok(ShareInfo {
         id: token,

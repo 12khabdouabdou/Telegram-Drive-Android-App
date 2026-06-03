@@ -117,14 +117,15 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             const results = await Promise.all(
                 shareFiles.map(async (file) => {
                     try {
-                        const info = await invoke<ShareInfo>('cmd_create_share', {
-                            folderId: null,
-                            messageId: file.id,
-                            fileName: file.name,
-                            fileSize: file.size,
-                            password: null,
-                            expiryHours: 24,
-                        });
+                            const info = await invoke<ShareInfo>('cmd_create_share', {
+                                folderId: null,
+                                messageId: file.id,
+                                fileName: file.name,
+                                fileSize: file.size,
+                                password: null,
+                                expiryHours: 24,
+                                shareHost: settings.shareHost,
+                            });
                         return { file, link: info.link };
                     } catch (e) {
                         toast.error(`Failed to share ${file.name}: ${e}`);
