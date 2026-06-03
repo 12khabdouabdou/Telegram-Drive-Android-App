@@ -263,11 +263,11 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
               folders={folders}
               activeFolderId={activeFolderId}
             />
-          </div>
+          </motion.div>
         )}
 
         {activeTab === 'downloads' && (
-          <div className="flex flex-col items-center justify-center h-[60vh] space-y-3 text-center px-6">
+          <motion.div key="downloads" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} transition={{ duration: 0.25, ease: "easeOut" }} className="flex flex-col items-center justify-center h-[60vh] space-y-3 text-center px-6">
             <div className="p-4 rounded-full bg-telegram-primary/10 text-telegram-primary border border-telegram-primary/20">
               <Download className="w-8 h-8 animate-bounce" />
             </div>
@@ -275,11 +275,11 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             <p className="text-xs text-telegram-subtext max-w-xs leading-relaxed">
               Downloads and uploads are safely queued and managed in the background.
             </p>
-          </div>
+          </motion.div>
         )}
 
         {activeTab === 'settings' && (
-          <div className="space-y-4">
+          <motion.div key="settings" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} transition={{ duration: 0.25, ease: "easeOut" }} className="space-y-4">
             <div className="p-4 rounded-2xl bg-telegram-hover/20 border border-telegram-border/30 space-y-4">
               <h3 className="text-sm font-bold text-telegram-primary tracking-wide uppercase text-[10px]">Preferences</h3>
               <div className="flex items-center justify-between py-2">
@@ -567,8 +567,9 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
               <LogOut className="w-4 h-4" />
               Log Out
             </button>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
       </main>
 
       {/* Slide-out Sidebar Drawer Overlay */}
