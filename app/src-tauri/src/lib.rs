@@ -19,7 +19,10 @@ fn init_com_on_worker_thread() {
     let hr = unsafe { CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED) };
     match hr {
         S_OK | S_FALSE => {
-            log::info!("COM MTA initialized on worker thread (hr=0x{:x})", hr as u32);
+            log::info!(
+                "COM MTA initialized on worker thread (hr=0x{:x})",
+                hr as u32
+            );
         }
         RPC_E_CHANGED_MODE => {
             // Thread was already initialized with a different apartment model.
@@ -38,27 +41,25 @@ fn init_com_on_worker_thread() {
     }
 }
 
-pub mod commands;
 pub mod bandwidth;
+pub mod commands;
 pub mod vpn_optimizer;
 
 use tauri::Manager;
 
-
-use tokio::sync::Mutex;
-use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
-use commands::TelegramState;
 use commands::streaming::StreamConfig;
+use commands::TelegramState;
 use rand::Rng;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-pub mod server;
 pub mod api_routes;
 pub mod db;
+pub mod jni_cache;
+pub mod server;
 pub mod share_routes;
 pub mod upload_service;
-pub mod jni_cache;
-
 
 /// Single source of truth for the Actix streaming server port.
 /// Referenced in lib.rs (server startup) and exposed to the frontend
@@ -117,9 +118,7 @@ pub fn restart_api_server(app: &tauri::AppHandle) {
         let sys = actix_rt::System::new();
         sys.block_on(async move {
             let api_state_data = actix_web::web::Data::new(tg_state);
-            let api_state = actix_web::web::Data::new(api_routes::ApiState {
-                key_hash,
-            });
+            let api_state = actix_web::web::Data::new(api_routes::ApiState { key_hash });
 
             log::info!("Starting REST API server on port {}", api_port);
 
@@ -135,7 +134,8 @@ pub fn restart_api_server(app: &tauri::AppHandle) {
                     .app_data(api_state.clone())
                     .configure(api_routes::configure_api)
             })
-            .bind(("127.0.0.1", api_port)) {
+            .bind(("127.0.0.1", api_port))
+            {
                 Ok(bound) => {
                     let server = bound.run();
                     *handle_for_thread.lock().unwrap() = Some(server.handle());
@@ -166,22 +166,24 @@ fn cmd_open_file_externally(path: String, _app_handle: tauri::AppHandle) -> Resu
         let ctx = ndk_context::android_context();
         let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
             .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
-        let mut env = vm.attach_current_thread()
+        let mut env = vm
+            .attach_current_thread()
             .map_err(|e| format!("Failed to attach thread: {}", e))?;
-        
+
         if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-            let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
+            let class_obj = env.new_local_ref(cached_ref.as_obj()).map_err(|e| e.to_string())?;
             let main_class: jni::objects::JClass = class_obj.into();
-            
-            let path_jstr = env.new_string(&path)
+
+            let path_jstr = env
+                .new_string(&path)
                 .map_err(|e| format!("Failed to create path JString: {}", e))?;
-            
+
             let lower_ext = std::path::Path::new(&path)
                 .extension()
                 .and_then(|ext| ext.to_str())
                 .unwrap_or("")
                 .to_lowercase();
-                
+
             let mime_type = match lower_ext.as_str() {
                 "jpg" | "jpeg" => "image/jpeg",
                 "png" => "image/png",
@@ -192,21 +194,28 @@ fn cmd_open_file_externally(path: String, _app_handle: tauri::AppHandle) -> Resu
                 "zip" => "application/zip",
                 _ => "application/octet-stream",
             };
-            
-            let mime_jstr = env.new_string(mime_type)
+
+            let mime_jstr = env
+                .new_string(mime_type)
                 .map_err(|e| format!("Failed to create mime JString: {}", e))?;
 
-            let success = env.call_static_method(
-                &main_class,
-                "openFileExternally",
-                "(Ljava/lang/String;Ljava/lang/String;)Z",
-                &[
-                    jni::objects::JValue::from(&path_jstr),
-                    jni::objects::JValue::from(&mime_jstr),
-                ],
-            ).map_err(|e| format!("Failed to call static JNI method openFileExternally: {}", e))?;
+            let success = env
+                .call_static_method(
+                    &main_class,
+                    "openFileExternally",
+                    "(Ljava/lang/String;Ljava/lang/String;)Z",
+                    &[
+                        jni::objects::JValue::from(&path_jstr),
+                        jni::objects::JValue::from(&mime_jstr),
+                    ],
+                )
+                .map_err(|e| {
+                    format!("Failed to call static JNI method openFileExternally: {}", e)
+                })?;
 
-            let success_bool = success.z().map_err(|e| format!("Failed to parse boolean result: {}", e))?;
+            let success_bool = success
+                .z()
+                .map_err(|e| format!("Failed to parse boolean result: {}", e))?;
             if !success_bool {
                 return Err("Failed to launch intent from Kotlin".to_string());
             }
@@ -218,7 +227,9 @@ fn cmd_open_file_externally(path: String, _app_handle: tauri::AppHandle) -> Resu
     #[cfg(not(target_os = "android"))]
     {
         use tauri_plugin_opener::OpenerExt;
-        app_handle.opener().open_path(&path, None::<&str>)
+        app_handle
+            .opener()
+            .open_path(&path, None::<&str>)
             .map_err(|e| e.to_string())
     }
 }
@@ -232,19 +243,19 @@ fn cmd_get_pending_share_count() -> Result<i32, String> {
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
-    let mut env = vm.attach_current_thread()
+    let mut env = vm
+        .attach_current_thread()
         .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
     if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-        let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
-            let main_class: jni::objects::JClass = class_obj.into();
-        let count = env.call_static_method(
-            &main_class,
-            "getAndClearShareCount",
-            "()I",
-            &[],
-        ).map_err(|e| format!("Failed to call getAndClearShareCount: {}", e))?;
-        let count_int = count.i().map_err(|e| format!("Failed to parse share count: {}", e))?;
+        let class_obj = env.new_local_ref(cached_ref.as_obj()).map_err(|e| e.to_string())?;
+        let main_class: jni::objects::JClass = class_obj.into();
+        let count = env
+            .call_static_method(&main_class, "getAndClearShareCount", "()I", &[])
+            .map_err(|e| format!("Failed to call getAndClearShareCount: {}", e))?;
+        let count_int = count
+            .i()
+            .map_err(|e| format!("Failed to parse share count: {}", e))?;
         Ok(count_int)
     } else {
         Err("MainActivity reference not cached".to_string())
@@ -273,23 +284,23 @@ fn cmd_list_cached_files() -> Result<Vec<CachedFileEntry>, String> {
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
-    let mut env = vm.attach_current_thread()
+    let mut env = vm
+        .attach_current_thread()
         .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
     if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-        let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
-            let main_class: jni::objects::JClass = class_obj.into();
-        let json_val = env.call_static_method(
-            &main_class,
-            "listCachedFiles",
-            "()Ljava/lang/String;",
-            &[],
-        ).map_err(|e| format!("Failed to call listCachedFiles: {}", e))?;
+        let class_obj = env.new_local_ref(cached_ref.as_obj()).map_err(|e| e.to_string())?;
+        let main_class: jni::objects::JClass = class_obj.into();
+        let json_val = env
+            .call_static_method(&main_class, "listCachedFiles", "()Ljava/lang/String;", &[])
+            .map_err(|e| format!("Failed to call listCachedFiles: {}", e))?;
 
-        let json_jstr: jni::objects::JString = json_val.l()
+        let json_jstr: jni::objects::JString = json_val
+            .l()
             .map_err(|e| format!("listCachedFiles result is not a string: {}", e))?
             .into();
-        let json_str: String = env.get_string(&json_jstr)
+        let json_str: String = env
+            .get_string(&json_jstr)
             .map_err(|e| format!("Failed to read listCachedFiles result: {}", e))?
             .into();
 
@@ -315,20 +326,23 @@ fn cmd_remove_cached_path(uri: String) -> Result<(), String> {
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
-    let mut env = vm.attach_current_thread()
+    let mut env = vm
+        .attach_current_thread()
         .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
     if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-        let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
-            let main_class: jni::objects::JClass = class_obj.into();
-        let j_uri = env.new_string(&uri)
+        let class_obj = env.new_local_ref(cached_ref.as_obj()).map_err(|e| e.to_string())?;
+        let main_class: jni::objects::JClass = class_obj.into();
+        let j_uri = env
+            .new_string(&uri)
             .map_err(|e| format!("Failed to create URI string: {}", e))?;
         env.call_static_method(
             &main_class,
             "removeCachedPath",
             "(Ljava/lang/String;)V",
             &[jni::objects::JValue::from(&j_uri)],
-        ).map_err(|e| format!("Failed to call removeCachedPath: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to call removeCachedPath: {}", e))?;
         let _ = env.exception_clear();
         Ok(())
     } else {

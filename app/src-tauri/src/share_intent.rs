@@ -1,6 +1,6 @@
-use tauri::{AppHandle, Emitter};
 use jni::objects::{JClass, JObjectArray, JString};
 use jni::JNIEnv;
+use tauri::{AppHandle, Emitter};
 
 // Global AppHandle storage so JNI can emit events
 lazy_static::lazy_static! {
@@ -27,23 +27,29 @@ pub extern "C" fn Java_com_cameronamer_telegramdrive_MainActivity_onSharedFilesR
 ) {
     let count = env.get_array_length(&uris).unwrap_or(0);
     let mut file_uris = Vec::new();
-    
+
     for i in 0..count {
         if let Ok(element) = env.get_object_array_element(&uris, i) {
             let jstr: JString = element.into();
-            if let Ok(path) = env.get_string(&jstr).map(|s| s.to_string_lossy().into_owned()) {
+            if let Ok(path) = env
+                .get_string(&jstr)
+                .map(|s| s.to_string_lossy().into_owned())
+            {
                 file_uris.push(path);
             }
         }
     }
-    
-    log::info!("JNI: MainActivity received {} shared files", file_uris.len());
-    
+
+    log::info!(
+        "JNI: MainActivity received {} shared files",
+        file_uris.len()
+    );
+
     // Store in cache for pull
     if let Ok(mut pending) = PENDING_SHARED_FILES.lock() {
         pending.extend(file_uris.clone());
     }
-    
+
     // Also try to emit directly if the app is already open
     if let Ok(guard) = APP_HANDLE.lock() {
         if let Some(app) = guard.as_ref() {

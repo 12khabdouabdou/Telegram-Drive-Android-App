@@ -1,15 +1,15 @@
+use crate::vpn_optimizer::NetworkConfig;
 use std::net::TcpStream;
 use std::time::Duration;
 use tauri::State;
-use crate::vpn_optimizer::NetworkConfig;
 
 /// Telegram DC addresses for connectivity checks and fallback
 const DC_ADDRESSES: &[&str] = &[
-    "149.154.167.50:443",  // DC2
-    "149.154.175.53:443",  // DC1
-    "149.154.167.51:443",  // DC3
-    "149.154.167.91:443",  // DC4
-    "91.108.56.130:443",   // DC5
+    "149.154.167.50:443", // DC2
+    "149.154.175.53:443", // DC1
+    "149.154.167.51:443", // DC3
+    "149.154.167.91:443", // DC4
+    "91.108.56.130:443",  // DC5
 ];
 
 /// Network availability check that respects VPN optimizer settings.
@@ -26,7 +26,11 @@ pub async fn cmd_is_network_available(
     let proxy_addr = net_config.proxy_addr();
     let dc_attempts = {
         let vpn = net_config.vpn.read().map_err(|e| e.to_string())?;
-        if vpn.enabled { vpn.dc_fallback_attempts as usize } else { 1 }
+        if vpn.enabled {
+            vpn.dc_fallback_attempts as usize
+        } else {
+            1
+        }
     };
 
     tokio::task::spawn_blocking(move || {
@@ -106,16 +110,13 @@ pub async fn cmd_detect_vpn() -> Result<bool, String> {
         #[cfg(target_os = "macos")]
         {
             // macOS: check for utun/tun/wg/ppp/tap/ipsec interfaces via ifconfig
-            match std::process::Command::new("ifconfig")
-                .arg("-l")
-                .output()
-            {
+            match std::process::Command::new("ifconfig").arg("-l").output() {
                 Ok(output) => {
                     let ifaces = String::from_utf8_lossy(&output.stdout);
                     let vpn_prefixes = ["utun", "tun", "wg", "ppp", "tap", "ipsec"];
-                    let found = ifaces.split_whitespace().any(|iface| {
-                        vpn_prefixes.iter().any(|prefix| iface.starts_with(prefix))
-                    });
+                    let found = ifaces
+                        .split_whitespace()
+                        .any(|iface| vpn_prefixes.iter().any(|prefix| iface.starts_with(prefix)));
                     Ok(found)
                 }
                 Err(_) => Ok(false),
@@ -145,14 +146,19 @@ pub async fn cmd_detect_vpn() -> Result<bool, String> {
         #[cfg(target_os = "windows")]
         {
             // Windows: run ipconfig and check output for common VPN adapter keywords
-            match std::process::Command::new("ipconfig")
-                .output()
-            {
+            match std::process::Command::new("ipconfig").output() {
                 Ok(output) => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
                     let vpn_keywords = [
-                        "tap-windows", "tunnel", "wireguard", "openvpn",
-                        "fortinet", "cisco", "tailscale", "zerotier", "ipsec"
+                        "tap-windows",
+                        "tunnel",
+                        "wireguard",
+                        "openvpn",
+                        "fortinet",
+                        "cisco",
+                        "tailscale",
+                        "zerotier",
+                        "ipsec",
                     ];
                     let found = vpn_keywords.iter().any(|kw| stdout.contains(kw));
                     Ok(found)

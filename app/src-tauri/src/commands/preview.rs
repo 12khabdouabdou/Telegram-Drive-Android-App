@@ -1,15 +1,18 @@
-use tauri::State;
-use tauri::Manager;
-use grammers_client::types::Media;
-use base64::{Engine as _, engine::general_purpose};
-use crate::TelegramState;
 use crate::bandwidth::BandwidthManager;
 use crate::commands::utils::resolve_peer;
+use crate::TelegramState;
+use base64::{engine::general_purpose, Engine as _};
+use grammers_client::types::Media;
+use tauri::Manager;
+use tauri::State;
 
 const PREVIEW_CACHE_MAX_FILES: usize = 30;
 const PREVIEW_CACHE_MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 
-async fn prune_preview_cache(cache_dir: std::path::PathBuf, preserve_path: Option<std::path::PathBuf>) {
+async fn prune_preview_cache(
+    cache_dir: std::path::PathBuf,
+    preserve_path: Option<std::path::PathBuf>,
+) {
     let _ = tokio::task::spawn_blocking(move || {
         let read_dir = match std::fs::read_dir(&cache_dir) {
             Ok(entries) => entries,
@@ -21,7 +24,10 @@ async fn prune_preview_cache(cache_dir: std::path::PathBuf, preserve_path: Optio
             if !path.is_file() {
                 continue;
             }
-            if preserve_path.as_ref().is_some_and(|preserve| preserve == &path) {
+            if preserve_path
+                .as_ref()
+                .is_some_and(|preserve| preserve == &path)
+            {
                 continue;
             }
             if let Ok(meta) = entry.metadata() {
@@ -40,7 +46,8 @@ async fn prune_preview_cache(cache_dir: std::path::PathBuf, preserve_path: Optio
                 break;
             }
         }
-    }).await;
+    })
+    .await;
 }
 
 #[tauri::command]
@@ -68,8 +75,10 @@ pub async fn cmd_get_preview(
     let client = client_opt.unwrap();
 
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
-    let messages = client.get_messages_by_id(&peer, &[message_id])
-        .await.map_err(|e| e.to_string())?;
+    let messages = client
+        .get_messages_by_id(&peer, &[message_id])
+        .await
+        .map_err(|e| e.to_string())?;
     let target_message = messages.into_iter().flatten().next();
 
     if let Some(msg) = target_message {
@@ -94,7 +103,7 @@ pub async fn cmd_get_preview(
                         }
                     }
                     e
-                },
+                }
                 Media::Photo(_) => "jpg".to_string(),
                 _ => "bin".to_string(),
             };
@@ -103,7 +112,7 @@ pub async fn cmd_get_preview(
                 .unwrap_or_else(|| "home".to_string());
             let save_path = cache_dir.join(format!("{}_{}.{}", folder_key, message_id, ext));
             let save_path_str = save_path.to_string_lossy().to_string();
-            
+
             // Prune the cache here, explicitly preserving the active file being previewed
             prune_preview_cache(cache_dir.clone(), Some(save_path.clone())).await;
 
@@ -113,7 +122,10 @@ pub async fn cmd_get_preview(
                 true
             } else {
                 if cached_meta.is_some() {
-                    log::warn!("Preview cache file was empty; redownloading: {}", save_path_str);
+                    log::warn!(
+                        "Preview cache file was empty; redownloading: {}",
+                        save_path_str
+                    );
                     let _ = tokio::fs::remove_file(&save_path).await;
                 }
                 let size = match &media {
@@ -133,16 +145,20 @@ pub async fn cmd_get_preview(
                                 .map(|meta| meta.len())
                                 .unwrap_or(0);
                             if written == 0 {
-                                log::error!("Preview download wrote an empty file: {}", save_path_str);
+                                log::error!(
+                                    "Preview download wrote an empty file: {}",
+                                    save_path_str
+                                );
                                 let _ = tokio::fs::remove_file(&save_path).await;
                                 false
                             } else {
                                 log::info!("Preview download complete: {} bytes.", written);
                                 bw_state.add_down(size);
-                                prune_preview_cache(cache_dir.clone(), Some(save_path.clone())).await;
+                                prune_preview_cache(cache_dir.clone(), Some(save_path.clone()))
+                                    .await;
                                 true
                             }
-                        },
+                        }
                         Err(e) => {
                             log::error!("Preview Download Error: {}", e);
                             false
@@ -152,7 +168,8 @@ pub async fn cmd_get_preview(
             };
             if file_ready {
                 let lower_ext = ext.to_lowercase();
-                if ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].contains(&lower_ext.as_str()) {
+                if ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].contains(&lower_ext.as_str())
+                {
                     log::info!("Converting file to Base64...");
                     match tokio::fs::read(&save_path).await {
                         Ok(bytes) => {
@@ -166,7 +183,7 @@ pub async fn cmd_get_preview(
                                 _ => "image/jpeg",
                             };
                             return Ok(format!("data:{};base64,{}", mime, b64));
-                        },
+                        }
                         Err(e) => {
                             log::error!("Failed to read file for base64: {}", e);
                             return Ok(save_path_str);
@@ -182,9 +199,7 @@ pub async fn cmd_get_preview(
 }
 
 #[tauri::command]
-pub async fn cmd_clean_preview_cache(
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn cmd_clean_preview_cache(app_handle: tauri::AppHandle) -> Result<(), String> {
     let cache_dir = app_handle
         .path()
         .app_cache_dir()
@@ -202,14 +217,13 @@ pub async fn cmd_clean_preview_cache(
                 }
             }
         }
-    }).await;
+    })
+    .await;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn cmd_clean_cache(
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn cmd_clean_cache(app_handle: tauri::AppHandle) -> Result<(), String> {
     let cache_dir = app_handle
         .path()
         .app_cache_dir()
@@ -228,7 +242,8 @@ pub async fn cmd_clean_cache(
         if thumb_dir.exists() {
             let _ = std::fs::remove_dir_all(thumb_dir);
         }
-    }).await;
+    })
+    .await;
     Ok(())
 }
 
@@ -278,8 +293,10 @@ pub async fn cmd_get_thumbnail(
     let client = client_opt.unwrap();
 
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
-    let messages = client.get_messages_by_id(&peer, &[message_id])
-        .await.map_err(|e| e.to_string())?;
+    let messages = client
+        .get_messages_by_id(&peer, &[message_id])
+        .await
+        .map_err(|e| e.to_string())?;
     if let Some(m) = messages.into_iter().flatten().next() {
         if let Some(media) = m.media() {
             // Only get thumbnails for photos and documents with photo thumbnails
@@ -299,7 +316,7 @@ pub async fn cmd_get_thumbnail(
                         // Not an image, return empty - FileCard will show icon
                         return Ok("".to_string());
                     }
-                },
+                }
                 _ => return Ok("".to_string()),
             };
 
@@ -314,7 +331,11 @@ pub async fn cmd_get_thumbnail(
                     _ => vec![],
                 };
 
-                let download_success = if let Some(thumb) = thumbs.iter().filter(|t| t.size() > 0).max_by_key(|t| t.size()) {
+                let download_success = if let Some(thumb) = thumbs
+                    .iter()
+                    .filter(|t| t.size() > 0)
+                    .max_by_key(|t| t.size())
+                {
                     client.download_media(thumb, &save_path_str).await.is_ok()
                 } else {
                     client.download_media(&media, &save_path_str).await.is_ok()
@@ -349,7 +370,7 @@ pub async fn cmd_delete_image_thumbnail(
         .app_data_dir()
         .map_err(|e: tauri::Error| e.to_string())?
         .join("thumbnails");
-        
+
     let _ = tokio::task::spawn_blocking(move || {
         let supported_exts = ["jpg", "png", "gif", "webp"];
         for ext in &supported_exts {
@@ -358,6 +379,7 @@ pub async fn cmd_delete_image_thumbnail(
                 let _ = std::fs::remove_file(path);
             }
         }
-    }).await;
+    })
+    .await;
     Ok(())
 }
