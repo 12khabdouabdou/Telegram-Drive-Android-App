@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 
@@ -70,15 +70,18 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [previewContextIndex, setPreviewContextIndex] = useState(-1);
     const [renameFolder, setRenameFolder] = useState<{ id: number; name: string } | null>(null);
 
-    const { data: allFiles = [], isLoading, error } = useQuery({
+    const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
         queryKey: ['files', activeFolderId],
-        queryFn: () => invoke<any[]>('cmd_get_files', { folderId: activeFolderId }).then(res => res.map(f => ({
+        queryFn: ({ pageParam }) => invoke<any[]>('cmd_get_files', { folderId: activeFolderId, offsetId: pageParam || null, limit: 100 }).then(res => res.map(f => ({
             ...f,
             sizeStr: formatBytes(f.size),
             type: f.icon_type || (f.name.endsWith('/') ? 'folder' : 'file')
         }))),
+        getNextPageParam: (lastPage) => lastPage.length === 100 ? lastPage[lastPage.length - 1].id : undefined,
         enabled: !!store,
+        initialPageParam: null,
     });
+    const allFiles = useMemo(() => data ? data.pages.flat() : [], [data]);
 
     const displayedFiles = useMemo<TelegramFile[]>(() => {
         return searchTerm.length > 2
@@ -505,6 +508,9 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     selectedIds={selectedIds}
                     activeFolderId={activeFolderId}
                     onFileClick={handleFileClick}
+                    fetchNextPage={fetchNextPage}
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
                     onDelete={handleDelete}
                     onDownload={(id, name) => queueDownload(id, name, activeFolderId)}
                     onPreview={handlePreview}

@@ -1007,6 +1007,8 @@ pub async fn cmd_move_files(
 #[tauri::command]
 pub async fn cmd_get_files(
     folder_id: Option<i64>,
+    offset_id: Option<i32>,
+    limit: Option<usize>,
     state: State<'_, TelegramState>,
 ) -> Result<Vec<FileMetadata>, String> {
     let client_opt = { state.client.lock().await.clone() };
@@ -1020,6 +1022,11 @@ pub async fn cmd_get_files(
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
 
     let mut msgs = client.iter_messages(&peer);
+    if let Some(oid) = offset_id {
+        msgs = msgs.offset_id(oid);
+    }
+    msgs = msgs.limit(limit.unwrap_or(100));
+    
     while let Some(msg) = msgs.next().await.map_err(|e| e.to_string())? {
         if let Some(doc) = msg.media() {
             let (name, size, mime, ext) = match doc {

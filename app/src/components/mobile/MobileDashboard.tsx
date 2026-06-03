@@ -4,7 +4,7 @@ import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, T
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { BottomNavBar } from './BottomNavBar';
 import { TouchFileList } from './TouchFileList';
@@ -106,15 +106,18 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const adVisible = !playingFile && !pdfFile && !previewFile;
 
   // Real files loader
-  const { data: allFiles = [], isLoading } = useQuery({
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['files', activeFolderId],
-    queryFn: () => invoke<any[]>('cmd_get_files', { folderId: activeFolderId }).then(res => res.map(f => ({
+    queryFn: ({ pageParam }) => invoke<any[]>('cmd_get_files', { folderId: activeFolderId, offsetId: pageParam || null, limit: 100 }).then(res => res.map(f => ({
       ...f,
       sizeStr: formatBytes(f.size),
       type: f.icon_type || (f.name.endsWith('/') ? 'folder' : 'file')
     }))),
+    getNextPageParam: (lastPage) => lastPage.length === 100 ? lastPage[lastPage.length - 1].id : undefined,
     enabled: !!store,
+    initialPageParam: null,
   });
+  const allFiles = useMemo(() => data ? data.pages.flat() : [], [data]);
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [fileRenames, setFileRenames] = useState<Map<number, string>>(new Map());
@@ -216,7 +219,13 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       </header>
 
       {/* Main Viewport Container */}
-      <main id="mobile-scroll-container" className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth">
+      <main id="mobile-scroll-container" className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth" onScroll={(e) => {
+        if (!hasNextPage || isFetchingNextPage || !fetchNextPage) return;
+        const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+        if (scrollHeight - scrollTop - clientHeight < 400) {
+            fetchNextPage();
+        }
+      }}>
         <AnimatePresence mode="wait">
         {activeTab === 'files' && (
           <motion.div key="files" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} transition={{ duration: 0.25, ease: "easeOut" }} className="space-y-4">
@@ -249,6 +258,9 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             <TouchFileList
               files={displayFiles}
               isLoading={isLoading}
+              fetchNextPage={fetchNextPage}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
               onDownload={handleDownload}
               onDelete={handleDeleteFile}
               onPreview={handlePreview}

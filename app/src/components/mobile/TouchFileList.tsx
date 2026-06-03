@@ -21,6 +21,9 @@ interface TouchFileListProps {
   onBulkDownload: () => void;
   onBulkMove: (targetFolderId: number | null) => void;
   folders: TelegramFolder[];
+  fetchNextPage?: () => void;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
   activeFolderId: number | null;
 }
 

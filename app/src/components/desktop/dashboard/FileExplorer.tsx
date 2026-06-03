@@ -31,6 +31,9 @@ interface FileExplorerProps {
     onDragEnd?: () => void;
     onShare?: (file: TelegramFile) => void;
     folders?: TelegramFolder[];
+    fetchNextPage?: () => void;
+    hasNextPage?: boolean;
+    isFetchingNextPage?: boolean;
 }
 
 
@@ -63,7 +66,8 @@ function useGridColumns(containerRef: React.RefObject<HTMLDivElement | null>) {
 export function FileExplorer({
     files, loading, error, viewMode, selectedIds, activeFolderId,
     onFileClick, onDelete, onDownload, onPreview, onManualUpload, onFolderUpload, showFolderUpload, onSelectionClear, onToggleSelection, onDrop, onDragStart, onDragEnd, onShare,
-    folders
+    folders,
+    fetchNextPage, hasNextPage, isFetchingNextPage
 }: FileExplorerProps) {
     const [sortField, setSortField] = useState<SortField>('name');
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -76,6 +80,14 @@ export function FileExplorer({
     const cardWidth = (containerWidth - (GAP * (columns - 1))) / columns;
     const cardHeight = cardWidth * 0.75; // aspect-[4/3]
     const rowHeight = Math.max(cardHeight + GAP, 150);
+
+        const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        if (!hasNextPage || isFetchingNextPage || !fetchNextPage) return;
+        const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+        if (scrollHeight - scrollTop - clientHeight < 400) {
+            fetchNextPage();
+        }
+    }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
     const handleContextMenu = useCallback((e: React.MouseEvent, file: TelegramFile) => {
         e.preventDefault();
@@ -189,6 +201,7 @@ export function FileExplorer({
             onClick={(e) => {
                 if (e.target === e.currentTarget) onSelectionClear();
             }}
+            onScroll={handleScroll}
         >
             {viewMode === 'grid' ? (
                 <>
