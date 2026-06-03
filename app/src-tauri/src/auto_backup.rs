@@ -1,5 +1,5 @@
 use tauri::{Manager, Emitter};
-use jni::objects::{JClass, JString};
+use jni::objects::JString;
 use jni::JNIEnv;
 
 #[cfg(target_os = "android")]
@@ -16,16 +16,14 @@ pub extern "C" fn Java_com_cameronamer_telegramdrive_AutoBackupService_onFileDis
             if let Some(app) = guard.as_ref() {
                 if let Some(db_pool) = app.try_state::<crate::db::DbConnection>() {
                     let conn = db_pool.blocking_lock();
-                    {
-                        let query = "INSERT OR IGNORE INTO auto_backups (file_path, status, created_at) VALUES (?, 'pending', strftime('%s', 'now'))";
-                        if let Ok(mut stmt) = conn.prepare(query) {
-                            let _ = stmt.bind((1, path.as_str()));
-                            if let Ok(_) = stmt.next() {
-                                log::info!("AutoBackup: Logged new file for backup: {}", path);
-                                let _ = app.emit("auto-backup-discovered", vec![path]);
-                            }
+                    let query = "INSERT OR IGNORE INTO auto_backups (file_path, status, created_at) VALUES (?, 'pending', strftime('%s', 'now'))";
+                    if let Ok(mut stmt) = conn.prepare(query) {
+                        let _ = stmt.bind((1, path.as_str()));
+                        if let Ok(_) = stmt.next() {
+                            log::info!("AutoBackup: Logged new file for backup: {}", path);
+                            let _ = app.emit("auto-backup-discovered", vec![path]);
                         }
-                    }
+                    };
                 }
             }
         }
@@ -126,7 +124,7 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
             
             // Read pending
             if let Some(db_pool) = app_handle.try_state::<crate::db::DbConnection>() {
-                let result: Result<Vec<(i64, String)>, String> = {
+                let result: Result<Vec<(i64, String)>, String> = async {
                     let conn = db_pool.lock().await;
                     let mut stmt = conn.prepare("SELECT id, file_path FROM auto_backups WHERE status = 'pending' LIMIT 5").map_err(|e| e.to_string())?;
                     let mut files = Vec::new();
@@ -136,7 +134,7 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
                         files.push((id, path));
                     }
                     Ok(files)
-                };
+                }.await;
                 
                 if let Ok(files) = result {
                     pending_files = files;
