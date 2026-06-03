@@ -167,11 +167,12 @@ pub fn start_auto_backup_processor(app_handle: tauri::AppHandle) {
 
                 if let Some(db_pool) = app_handle.try_state::<crate::db::DbConnection>() {
                     let conn = db_pool.lock().await;
-                    if let Ok(mut stmt) = conn.prepare("UPDATE auto_backups SET status = ? WHERE id = ?") {
+                    let query = "UPDATE auto_backups SET status = ? WHERE id = ?";
+                    if let Ok(mut stmt) = conn.prepare(query) {
                         let _ = stmt.bind((1, new_status));
                         let _ = stmt.bind((2, id));
                         let _ = stmt.next();
-                    }
+                    };
                 }
             }
         }
