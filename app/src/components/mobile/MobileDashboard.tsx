@@ -103,6 +103,8 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
   const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
   const [previewFile, setPreviewFile] = useState<TelegramFile | null>(null);
+  const [showFolderInput, setShowFolderInput] = useState(false);
+  const [newFolderInput, setNewFolderInput] = useState("");
 
   const adVisible = !playingFile && !pdfFile && !previewFile;
 
@@ -333,9 +335,15 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                       nightMode: settings.autoBackupNightMode,
                       destination: settings.autoBackupDestination,
                       mode: settings.autoBackupMode,
-                      folders: settings.autoBackupFolders
+                      folders: settings.autoBackupFolders || []
                     };
-                    invoke('cmd_toggle_auto_backup', { config }).catch(console.error);
+                    invoke('cmd_toggle_auto_backup', { config })
+                      .then(() => toast.success(newEnabled ? "Auto-Backup enabled!" : "Auto-Backup disabled!"))
+                      .catch((e) => {
+                        console.error(e);
+                        toast.error(`Failed to toggle auto-backup: ${e}`);
+                        updateSetting('autoBackupEnabled', !newEnabled); // revert
+                      });
                   }}
                   className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${settings.autoBackupEnabled ? 'bg-telegram-primary' : 'bg-telegram-border'}`}
                 >
@@ -391,23 +399,76 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                           </div>
                         ))
                       )}
-                      <button
-                        onClick={async () => {
-                          const selected = await openDialog({ directory: true, multiple: false });
-                          if (selected) {
-                            const folderPath = Array.isArray(selected) ? selected[0] : selected;
-                            const folderName = folderPath.split(/[/\\]/).pop() || folderPath;
-                            const newFolders = settings.autoBackupFolders ? [...settings.autoBackupFolders] : [];
-                            if (!newFolders.includes(folderName)) {
-                              newFolders.push(folderName);
-                              updateSetting('autoBackupFolders', newFolders);
+                      {showFolderInput ? (
+                        <div className="flex items-center gap-2 w-full mt-2">
+                          <input 
+                            type="text" 
+                            autoFocus
+                            placeholder="e.g. Camera, WhatsApp" 
+                            value={newFolderInput}
+                            onChange={(e) => setNewFolderInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && newFolderInput.trim()) {
+                                const newFolders = settings.autoBackupFolders ? [...settings.autoBackupFolders] : [];
+                                if (!newFolders.includes(newFolderInput.trim())) {
+                                  newFolders.push(newFolderInput.trim());
+                                  updateSetting('autoBackupFolders', newFolders);
+                                }
+                                setNewFolderInput("");
+                                setShowFolderInput(false);
+                              }
+                            }}
+                            className="flex-1 bg-telegram-bg border border-telegram-border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-telegram-primary"
+                          />
+                          <button 
+                            onClick={() => {
+                              if (newFolderInput.trim()) {
+                                const newFolders = settings.autoBackupFolders ? [...settings.autoBackupFolders] : [];
+                                if (!newFolders.includes(newFolderInput.trim())) {
+                                  newFolders.push(newFolderInput.trim());
+                                  updateSetting('autoBackupFolders', newFolders);
+                                }
+                              }
+                              setNewFolderInput("");
+                              setShowFolderInput(false);
+                            }}
+                            className="bg-telegram-primary text-black px-2 py-1 rounded-lg text-xs font-semibold"
+                          >
+                            Add
+                          </button>
+                          <button onClick={() => setShowFolderInput(false)} className="text-telegram-subtext hover:text-telegram-text p-1">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            if (isAndroid) {
+                              setShowFolderInput(true);
+                              return;
                             }
-                          }
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-telegram-hover/30 text-telegram-text border border-telegram-border rounded-lg text-[10px] font-medium hover:bg-telegram-hover/50 transition-colors"
-                      >
-                        <FolderUp className="w-3 h-3" /> Add Folder
-                      </button>
+                            try {
+                              const selected = await openDialog({ directory: true, multiple: false });
+                              if (selected) {
+                                const folderPath = Array.isArray(selected) ? selected[0] : selected;
+                                const folderName = folderPath.split(/[/\\]/).pop() || folderPath;
+                                const newFolders = settings.autoBackupFolders ? [...settings.autoBackupFolders] : [];
+                                if (!newFolders.includes(folderName)) {
+                                  newFolders.push(folderName);
+                                  updateSetting('autoBackupFolders', newFolders);
+                                }
+                              } else {
+                                setShowFolderInput(true);
+                              }
+                            } catch (e) {
+                              setShowFolderInput(true);
+                            }
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-telegram-hover/30 text-telegram-text border border-telegram-border rounded-lg text-[10px] font-medium hover:bg-telegram-hover/50 transition-colors"
+                        >
+                          <FolderUp className="w-3 h-3" /> Add Folder
+                        </button>
+                      )}
                     </div>
                     <p className="text-[10px] text-telegram-subtext mt-1">Select specific folders to monitor, or leave empty for all.</p>
                   </div>
