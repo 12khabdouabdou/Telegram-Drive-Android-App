@@ -50,3 +50,14 @@
 ## Testing
 - **Rust backend:** `cargo test` runs platform-agnostic URI cache tests in `app/src-tauri/tests/`. Android-targeted tests exist but only compile/test on actual Android targets (`#[cfg(target_os = "android")]`).
 - **Frontend:** No automated tests configured.
+
+## Repository Map
+
+A full codemap is available at `codemap.md` in the project root.
+
+Before working on any task, read `codemap.md` to understand:
+- Project architecture and entry points
+- Directory responsibilities and design patterns
+- Data flow and integration points between modules
+
+For deep work on a specific folder, also read that folder's `codemap.md`.
