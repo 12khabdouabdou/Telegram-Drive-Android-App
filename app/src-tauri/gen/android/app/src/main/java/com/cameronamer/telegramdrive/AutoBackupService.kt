@@ -44,30 +44,47 @@ class AutoBackupService : Service() {
 
         startForeground(NOTIFICATION_ID, notification)
         
-        startWatchingDirectories()
+        var folders: Array<String>? = null
+        if (intent != null) {
+            folders = intent.getStringArrayExtra("folders")
+        }
+        
+        startWatchingDirectories(folders)
 
         return START_STICKY
     }
 
-    private fun startWatchingDirectories() {
+    private fun startWatchingDirectories(foldersFromIntent: Array<String>?) {
         // Stop any existing observers
         observers.forEach { it.stopWatching() }
         observers.clear()
 
-        // Standard folders to watch. In a full app, these come from Settings (Rust to Java)
-        val dcimCamera = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
-        val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-
-        val foldersToWatch = listOf(dcimCamera, pictures)
+        val foldersToWatch = mutableListOf<File>()
+        
+        if (foldersFromIntent != null && foldersFromIntent.isNotEmpty()) {
+            for (folderName in foldersFromIntent) {
+                // If it looks like an absolute path, use it directly, otherwise assume it's relative to external storage
+                if (folderName.startsWith("/")) {
+                    foldersToWatch.add(File(folderName))
+                } else {
+                    foldersToWatch.add(File(Environment.getExternalStorageDirectory(), folderName))
+                }
+            }
+        } else {
+            val dcimCamera = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
+            val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            foldersToWatch.add(dcimCamera)
+            foldersToWatch.add(pictures)
+        }
 
         for (folder in foldersToWatch) {
             if (folder.exists() && folder.isDirectory) {
-                // Using FileObserver to watch for new files (CREATE event)
-                val observer = object : FileObserver(folder.absolutePath, CREATE) {
+                // Using FileObserver(File, int) constructor API 29+
+                val observer = object : FileObserver(folder, CREATE) {
                     override fun onEvent(event: Int, path: String?) {
                         if (path != null) {
                             val fullPath = File(folder, path).absolutePath
-                            Log.i("AutoBackupService", "New file detected: \$fullPath")
+                            Log.i("AutoBackupService", "New file detected: $fullPath")
                             // Pass the newly discovered file path back to the Rust backend
                             try {
                                 onFileDiscovered(fullPath)
@@ -79,7 +96,7 @@ class AutoBackupService : Service() {
                 }
                 observer.startWatching()
                 observers.add(observer)
-                Log.i("AutoBackupService", "Started watching folder: \${folder.absolutePath}")
+                Log.i("AutoBackupService", "Started watching folder: ${folder.absolutePath}")
             }
         }
     }

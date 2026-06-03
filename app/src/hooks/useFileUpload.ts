@@ -139,7 +139,7 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
     const queueFiles = (paths: string[]) => {
         if (!paths || paths.length === 0) return;
         const newItems: QueueItem[] = paths.map((path: string) => ({
-            id: Math.random().toString(36).substr(2, 9),
+            id: crypto.randomUUID(),
             path,
             folderId: activeFolderIdRef.current,
             status: 'pending' as const,
@@ -216,7 +216,7 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
             try {
                 const zipPath = await invoke<string>('cmd_zip_folder', { folderPath });
                 const item: QueueItem = {
-                    id: Math.random().toString(36).substr(2, 9),
+                    id: crypto.randomUUID(),
                     path: zipPath,
                     folderId: activeFolderIdRef.current,
                     status: 'pending',

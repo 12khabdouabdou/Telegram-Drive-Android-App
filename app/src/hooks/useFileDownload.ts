@@ -131,7 +131,7 @@ export function useFileDownload(store: Store | null) {
 
     const queueDownload = (messageId: number, filename: string, folderId: number | null) => {
         const newItem: DownloadItem = {
-            id: Math.random().toString(36).substr(2, 9),
+            id: crypto.randomUUID(),
             messageId,
             filename,
             folderId,
@@ -146,7 +146,7 @@ export function useFileDownload(store: Store | null) {
         // falls through to item.filename.
         if (isAndroidPlatform) {
             const newItems: DownloadItem[] = files.map(file => ({
-                id: Math.random().toString(36).substr(2, 9),
+                id: crypto.randomUUID(),
                 messageId: file.id,
                 filename: file.name,
                 folderId,
@@ -160,7 +160,7 @@ export function useFileDownload(store: Store | null) {
         const enqueueFiles = (dir: string) => {
             const separator = dir.includes('\\') ? '\\' : '/';
             const newItems: DownloadItem[] = files.map(file => ({
-                id: Math.random().toString(36).substr(2, 9),
+                id: crypto.randomUUID(),
                 messageId: file.id,
                 filename: file.name,
                 folderId,

@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Manager};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use std::time::Duration;
 
 pub type DbConnection = Arc<Mutex<sqlite::Connection>>;
@@ -96,5 +97,6 @@ pub fn init_db(app: &AppHandle) -> Result<DbConnection, String> {
     }
     
     log::info!("SQLite database initialized successfully using sqlite crate.");
+    conn.execute("PRAGMA busy_timeout = 5000;").unwrap();
     Ok(Arc::new(Mutex::new(conn)))
 }

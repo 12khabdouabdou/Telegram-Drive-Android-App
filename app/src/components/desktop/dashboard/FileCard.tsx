@@ -85,7 +85,7 @@ export function FileCard({ file, onDelete, onDownload, onPreview, onShare, isSel
                 }
             }}
         >
-            <motion.div
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.2, ease: "easeOut" }}
                 layout
                 draggable={!isFolder}
                 onDragStart={(e: any) => {
@@ -97,7 +97,7 @@ export function FileCard({ file, onDelete, onDownload, onPreview, onShare, isSel
                     if (onDragEnd) onDragEnd();
                 }}
                 whileHover={{ y: -4 }}
-                className={`group cursor-pointer bg-telegram-surface rounded-xl overflow-hidden border hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all relative
+                className={`group cursor-pointer bg-telegram-surface rounded-xl overflow-hidden border hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 ease-out relative
                 ${isSelected ? 'border-telegram-primary bg-telegram-primary/5 ring-1 ring-telegram-primary' : 'border-telegram-border hover:border-telegram-primary/50'}
                 ${isDragOver ? 'ring-2 ring-telegram-primary bg-telegram-primary/20 scale-105' : ''}`}
                 style={height ? { height: `${height}px` } : { aspectRatio: '4/3' }}

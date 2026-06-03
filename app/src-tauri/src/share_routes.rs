@@ -26,12 +26,7 @@ struct VerifyForm {
     password: String,
 }
 
-fn hash_password(password: &str, salt: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(password.as_bytes());
-    hasher.update(salt.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
+
 
 fn generate_cookie_val(token: &str, password_hash: &str) -> String {
     let mut hasher = Sha256::new();
@@ -40,8 +35,8 @@ fn generate_cookie_val(token: &str, password_hash: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn get_share_by_token(db: &DbConnection, token: &str) -> Result<Option<SharedLinkRow>, String> {
-    let conn = db.lock().map_err(|e| e.to_string())?;
+async fn get_share_by_token(db: &DbConnection, token: &str) -> Result<Option<SharedLinkRow>, String> {
+    let conn = db.lock().await;
     let mut stmt = conn
         .prepare(
             "SELECT id, folder_id, message_id, file_name, file_size, password_hash, password_salt, expires_at, revoked 
@@ -186,7 +181,7 @@ async fn get_shared_file(
 ) -> impl Responder {
     let token = path.into_inner();
     
-    let row = match get_share_by_token(&db_conn, &token) {
+    let row = match get_share_by_token(&db_conn, &token).await {
         Ok(Some(r)) => r,
         Ok(None) => return HttpResponse::NotFound().body("Shared link not found"),
         Err(e) => {
@@ -370,7 +365,7 @@ async fn verify_shared_file_password(
 ) -> impl Responder {
     let token = path.into_inner();
     
-    let row = match get_share_by_token(&db_conn, &token) {
+    let row = match get_share_by_token(&db_conn, &token).await {
         Ok(Some(r)) => r,
         Ok(None) => return HttpResponse::NotFound().body("Shared link not found"),
         Err(e) => {

@@ -1,3 +1,4 @@
+import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, ChevronDown, Cloud } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
@@ -216,8 +217,9 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
       {/* Main Viewport Container */}
       <main id="mobile-scroll-container" className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth">
+        <AnimatePresence mode="wait">
         {activeTab === 'files' && (
-          <div className="space-y-4">
+          <motion.div key="files" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} transition={{ duration: 0.25, ease: "easeOut" }} className="space-y-4">
             {/* Folder Header Breadcrumb */}
             <div className="flex items-center justify-between bg-telegram-hover/20 p-3 rounded-2xl border border-telegram-border/30">
               <div className="flex items-center gap-2.5">
@@ -310,7 +312,16 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   onClick={() => {
                     const newEnabled = !settings.autoBackupEnabled;
                     updateSetting('autoBackupEnabled', newEnabled);
-                    invoke('cmd_toggle_auto_backup', { enabled: newEnabled }).catch(console.error);
+                    const config = {
+                      enabled: newEnabled,
+                      wifiOnly: settings.autoBackupWifiOnly,
+                      batterySafe: settings.autoBackupBatterySafe,
+                      nightMode: settings.autoBackupNightMode,
+                      destination: settings.autoBackupDestination,
+                      mode: settings.autoBackupMode,
+                      folders: settings.autoBackupFolders
+                    };
+                    invoke('cmd_toggle_auto_backup', { config }).catch(console.error);
                   }}
                   className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${settings.autoBackupEnabled ? 'bg-telegram-primary' : 'bg-telegram-border'}`}
                 >

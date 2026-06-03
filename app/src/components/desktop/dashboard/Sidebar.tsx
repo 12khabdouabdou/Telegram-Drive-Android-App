@@ -92,7 +92,7 @@ export function Sidebar({
                 ) : (
                     <button
                         onClick={() => setShowNewFolderInput(true)}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-telegram-subtext hover:bg-telegram-hover hover:text-telegram-text transition-colors border border-dashed border-telegram-border"
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-telegram-subtext hover:bg-telegram-hover hover:text-telegram-text transition-all duration-200 shadow-sm hover:shadow border border-dashed border-telegram-border"
                     >
                         <Plus className="w-4 h-4" />
                         Create Folder

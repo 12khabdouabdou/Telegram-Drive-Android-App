@@ -272,10 +272,10 @@ pub async fn start_server(
             .service(stream_media)
             .configure(crate::share_routes::configure_share_routes)
     })
-    .bind(("0.0.0.0", port))?
+    .bind(("127.0.0.1", port))?
     .run();
 
-    log::info!("Streaming Server started successfully on http://0.0.0.0:{}", port);
+    log::info!("Streaming Server started successfully on http://127.0.0.1:{}", port);
 
     Ok(server)
 }

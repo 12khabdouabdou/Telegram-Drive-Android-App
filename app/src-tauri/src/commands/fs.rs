@@ -149,8 +149,8 @@ pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
         
         let fd_val = env.call_method(&pfd, "detachFd", "()I", &[]);
         
-        // Attempt to close the PFD properly to prevent resource leaks
-        let _ = env.call_method(&pfd, "close", "()V", &[]);
+        // detachFd transfers ownership to native code, do NOT close the PFD here
+        // as it will throw an exception since the fd is no longer attached.
 
         let fd_val_unwrapped = fd_val.map_err(|e| format!("Failed to detachFd: {}", e))?;
         let fd = fd_val_unwrapped.i().map_err(|e| format!("fd is not an int: {}", e))?;
@@ -917,7 +917,8 @@ pub async fn cmd_download_file(
             if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
                 if let Ok(mut env) = vm.attach_current_thread() {
                     if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-                        let main_class: jni::objects::JClass = unsafe { std::mem::transmute_copy(cached_ref.as_obj()) };
+                        let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
+                        let main_class: jni::objects::JClass = class_obj.into();
                         if let Ok(j_cache_path) = env.new_string(&actual_save_path) {
                             if let Ok(j_file_name) = env.new_string(file_name) {
                                 if let Ok(j_mime_type) = env.new_string(mime_type) {
@@ -991,16 +992,12 @@ pub async fn cmd_move_files(
 
     match client.forward_messages(&target_peer, &message_ids, &source_peer).await {
         Ok(forwarded_msgs) => {
-            // Check if any messages successfully forwarded to prevent data loss
             if forwarded_msgs.is_empty() {
                 return Err("Failed to forward any messages. Originals preserved.".to_string());
             }
-            // Only delete the messages that were actually forwarded
-            // In grammers, forwarded_msgs holds the new messages. We assume the array order maps to the original message_ids
-            // Wait, to be perfectly safe, if the array length matches, delete all. If not, only delete the count. 
-            // We'll just safely delete the requested message_ids if the forward returned at least 1 message, since partial failure is rare.
-            // But to be secure against data loss:
-            let _ = client.delete_messages(&source_peer, &message_ids).await;
+            let forwarded_count = forwarded_msgs.len();
+            let ids_to_delete: Vec<i32> = message_ids.into_iter().take(forwarded_count).collect();
+            let _ = client.delete_messages(&source_peer, &ids_to_delete).await;
             Ok(true)
         },
         Err(e) => Err(format!("Forward failed: {}. Originals preserved.", e)),

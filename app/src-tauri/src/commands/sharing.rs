@@ -21,11 +21,19 @@ fn generate_share_token() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-fn hash_password(password: &str, salt: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(password.as_bytes());
-    hasher.update(salt.as_bytes());
-    format!("{:x}", hasher.finalize())
+pub fn hash_password(password: &str, salt: &str) -> String {
+    let argon2 = Argon2::default();
+    let salt_parsed = SaltString::from_b64(salt).unwrap_or_else(|_| SaltString::generate(&mut OsRng));
+    argon2.hash_password(password.as_bytes(), &salt_parsed)
+        .map(|hash| hash.to_string())
+        .unwrap_or_default()
+}
+
+pub fn verify_password(password: &str, hash: &str) -> bool {
+    if let Ok(parsed_hash) = PasswordHash::new(hash) {
+        return Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok();
+    }
+    false
 }
 
 #[tauri::command]
@@ -62,7 +70,7 @@ pub async fn cmd_create_share(
         (None, None)
     };
 
-    let conn = db_pool.lock().map_err(|e| e.to_string())?;
+    let conn = db_pool.lock().await;
     
     let mut stmt = conn.prepare(
         "INSERT INTO shared_links (id, folder_id, message_id, file_name, file_size, password_hash, password_salt, expires_at, revoked, created_at)
@@ -98,7 +106,7 @@ pub async fn cmd_create_share(
 pub async fn cmd_list_shares(
     db_pool: State<'_, DbConnection>,
 ) -> Result<Vec<ShareInfo>, String> {
-    let conn = db_pool.lock().map_err(|e| e.to_string())?;
+    let conn = db_pool.lock().await;
     let mut stmt = conn
         .prepare(
             "SELECT id, folder_id, message_id, file_name, file_size, password_hash, expires_at, created_at 
@@ -135,7 +143,7 @@ pub async fn cmd_revoke_share(
     id: String,
     db_pool: State<'_, DbConnection>,
 ) -> Result<(), String> {
-    let conn = db_pool.lock().map_err(|e| e.to_string())?;
+    let conn = db_pool.lock().await;
     let mut stmt = conn.prepare("UPDATE shared_links SET revoked = 1 WHERE id = ?").map_err(|e| e.to_string())?;
     stmt.bind((1, id.as_str())).map_err(|e| e.to_string())?;
     stmt.next().map_err(|e| e.to_string())?;

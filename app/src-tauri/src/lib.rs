@@ -170,7 +170,8 @@ fn cmd_open_file_externally(path: String, _app_handle: tauri::AppHandle) -> Resu
             .map_err(|e| format!("Failed to attach thread: {}", e))?;
         
         if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-            let main_class: jni::objects::JClass = unsafe { std::mem::transmute_copy(cached_ref.as_obj()) };
+            let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
+            let main_class: jni::objects::JClass = class_obj.into();
             
             let path_jstr = env.new_string(&path)
                 .map_err(|e| format!("Failed to create path JString: {}", e))?;
@@ -235,7 +236,8 @@ fn cmd_get_pending_share_count() -> Result<i32, String> {
         .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
     if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-        let main_class: jni::objects::JClass = unsafe { std::mem::transmute_copy(cached_ref.as_obj()) };
+        let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
+            let main_class: jni::objects::JClass = class_obj.into();
         let count = env.call_static_method(
             &main_class,
             "getAndClearShareCount",
@@ -275,7 +277,8 @@ fn cmd_list_cached_files() -> Result<Vec<CachedFileEntry>, String> {
         .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
     if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-        let main_class: jni::objects::JClass = unsafe { std::mem::transmute_copy(cached_ref.as_obj()) };
+        let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
+            let main_class: jni::objects::JClass = class_obj.into();
         let json_val = env.call_static_method(
             &main_class,
             "listCachedFiles",
@@ -316,7 +319,8 @@ fn cmd_remove_cached_path(uri: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to attach thread: {}", e))?;
 
     if let Some(cached_ref) = crate::jni_cache::get_main_activity_class() {
-        let main_class: jni::objects::JClass = unsafe { std::mem::transmute_copy(cached_ref.as_obj()) };
+        let class_obj = env.new_local_ref(cached_ref.as_obj()).unwrap();
+            let main_class: jni::objects::JClass = class_obj.into();
         let j_uri = env.new_string(&uri)
             .map_err(|e| format!("Failed to create URI string: {}", e))?;
         env.call_static_method(
@@ -373,6 +377,9 @@ pub fn run() {
             if let Ok(mut guard) = crate::share_intent::APP_HANDLE.lock() {
                 *guard = Some(app.handle().clone());
             }
+            
+            crate::auto_backup::start_auto_backup_processor(app.handle().clone());
+
             #[cfg(target_os = "android")]
             {
                 // SAFETY NET: Wrap all Android JNI initialization in catch_unwind to prevent

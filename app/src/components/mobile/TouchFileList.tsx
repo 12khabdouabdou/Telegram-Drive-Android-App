@@ -279,7 +279,7 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
                         onPreview(file);
                       }
                     }}
-                    className={`h-full flex items-center justify-between p-3.5 rounded-2xl bg-telegram-hover/15 border transition-all duration-200 cursor-pointer active:bg-telegram-hover/35 ${
+                    className={`h-full flex items-center justify-between p-3.5 rounded-2xl bg-telegram-hover/15 border transition-all duration-300 cursor-pointer active:scale-95 hover:shadow-md hover:bg-telegram-hover/30 ${
                       isSelected ? 'border-telegram-primary/50 bg-telegram-primary/10' : 'border-telegram-border/20'
                     }`}
                   >
