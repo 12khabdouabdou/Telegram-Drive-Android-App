@@ -24,7 +24,7 @@ sqlite = { workspace = true }
 walkdir = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 lazy_static = "1.4"
-uniffi = "0.27"
+uniffi = { version = "0.27", features = ["cli"] }
 
 [build-dependencies]
 uniffi = { version = "0.27", features = ["build"] }
