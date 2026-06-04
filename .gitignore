@@ -21,7 +21,6 @@ Error.html
 **/LatestError.html
 
 # Android local builds
-/android/
 /app/src-tauri/gen/android/
 *.apk
 *.aab
