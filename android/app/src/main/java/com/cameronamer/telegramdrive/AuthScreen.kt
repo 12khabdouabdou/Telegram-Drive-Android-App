@@ -84,9 +84,9 @@ fun AuthScreen(
             modifier = Modifier.padding(bottom = 32.dp)
         )
 
-        if (errorMessage != null) {
+        errorMessage?.let { msg ->
             Text(
-                text = errorMessage!!,
+                text = msg,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -169,12 +169,19 @@ fun AuthScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = {
+                        // Defensive: re-validate credentials before JNI call
+                        val idInt = apiId.toIntOrNull()
+                        if (apiId.isBlank() || idInt == null || idInt <= 0 || apiHash.isBlank()) {
+                            errorMessage = "API credentials are missing or invalid. Please re-enter them."
+                            currentStep = AuthStep.SETUP
+                            return@Button
+                        }
                         isLoading = true
                         errorMessage = null
                         coroutineScope.launch {
                             try {
                                 val result = withContext(Dispatchers.IO) {
-                                    requestCode(phoneNumber, apiId.toInt(), apiHash)
+                                    requestCode(phoneNumber, idInt, apiHash)
                                 }
                                 if (result.startsWith("Error")) {
                                     errorMessage = result
@@ -190,6 +197,8 @@ fun AuthScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = phoneNumber.isNotBlank() && !isLoading
+                        && apiId.isNotBlank() && apiId.toIntOrNull() != null
+                        && apiHash.isNotBlank()
                 ) {
                     Text(if (isLoading) "Sending..." else "Send Code")
                 }

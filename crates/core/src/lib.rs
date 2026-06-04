@@ -91,6 +91,33 @@ pub fn logout() -> bool {
     })
 }
 
+/// Synchronous uniFFI wrapper around the async core uploader.
+///
+/// Constructs a default `BandwidthManager` (pointed at the data dir passed to
+/// `init_core`) and a default `NetworkConfig` so that the Kotlin foreground
+/// service can call a single function without having to plumb bandwidth /
+/// network state across the FFI boundary. The full progress-callback path
+/// remains available to the Tauri command layer for the React UI.
+pub fn upload_file(path: String) -> String {
+    get_runtime().block_on(async {
+        let state = get_state();
+        let data_dir = get_data_dir();
+        let bw_state = crate::bandwidth::BandwidthManager::new(&data_dir);
+        let net_config = crate::vpn_optimizer::NetworkConfig::default();
+        crate::fs::cmd_upload_file(
+            path,
+            None,
+            None,
+            None,
+            &state,
+            &bw_state,
+            &net_config,
+        )
+        .await
+        .unwrap_or_else(|e| format!("Error: {}", e))
+    })
+}
+
 pub fn list_files(folder_id: Option<i64>) -> Vec<String> {
     vec![]
 }
