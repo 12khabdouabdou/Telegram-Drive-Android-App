@@ -104,13 +104,15 @@ fun AuthScreen(
                         errorMessage = null
                         coroutineScope.launch {
                             try {
-                                val success = withContext(Dispatchers.IO) {
+                                val result = withContext(Dispatchers.IO) {
                                     signIn(code)
                                 }
-                                if (success) {
+                                if (result == "SUCCESS") {
                                     onLoginComplete()
-                                } else {
+                                } else if (result == "PASSWORD_REQUIRED") {
                                     currentStep = AuthStep.PASSWORD
+                                } else {
+                                    errorMessage = result
                                 }
                             } catch (e: Exception) {
                                 errorMessage = e.message

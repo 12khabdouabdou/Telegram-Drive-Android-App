@@ -3,7 +3,7 @@ namespace telegram_drive {
     
     // Auth
     string request_code(string phone, i32 api_id, string api_hash);
-    boolean sign_in(string code);
+    string sign_in(string code);
     boolean check_password(string password);
     boolean logout();
 
