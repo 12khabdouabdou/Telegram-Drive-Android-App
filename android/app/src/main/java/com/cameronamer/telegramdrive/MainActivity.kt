@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
         // Ensure the UniFFI core library is loaded
         try {
             System.loadLibrary("telegram_drive_core")
+            uniffi.telegram_drive.initCore(filesDir.absolutePath)
         } catch (e: UnsatisfiedLinkError) {
             Log.e("MainActivity", "Native library not loaded yet (expected in CI build)")
         }

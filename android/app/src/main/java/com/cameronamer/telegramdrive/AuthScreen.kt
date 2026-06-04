@@ -8,6 +8,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import uniffi.telegram_drive.checkPassword
+import uniffi.telegram_drive.requestCode
+import uniffi.telegram_drive.signIn
 
 enum class AuthStep {
     PHONE, CODE, PASSWORD
@@ -17,6 +23,7 @@ enum class AuthStep {
 fun AuthScreen(
     onLoginComplete: () -> Unit
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var currentStep by remember { mutableStateOf(AuthStep.PHONE) }
     var phoneNumber by remember { mutableStateOf("") }
     var apiId by remember { mutableStateOf("2040") } // Default Telegram API ID
@@ -60,9 +67,22 @@ fun AuthScreen(
                     onClick = {
                         isLoading = true
                         errorMessage = null
-                        // TODO: Call UniFFI telegram_drive.request_code()
-                        currentStep = AuthStep.CODE
-                        isLoading = false
+                        coroutineScope.launch {
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    requestCode(phoneNumber, apiId.toInt(), apiHash)
+                                }
+                                if (result.startsWith("Error")) {
+                                    errorMessage = result
+                                } else {
+                                    currentStep = AuthStep.CODE
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = e.message
+                            } finally {
+                                isLoading = false
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = phoneNumber.isNotBlank() && !isLoading
@@ -82,9 +102,22 @@ fun AuthScreen(
                     onClick = {
                         isLoading = true
                         errorMessage = null
-                        // TODO: Call UniFFI telegram_drive.sign_in()
-                        currentStep = AuthStep.PASSWORD
-                        isLoading = false
+                        coroutineScope.launch {
+                            try {
+                                val success = withContext(Dispatchers.IO) {
+                                    signIn(code)
+                                }
+                                if (success) {
+                                    onLoginComplete()
+                                } else {
+                                    currentStep = AuthStep.PASSWORD
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = e.message
+                            } finally {
+                                isLoading = false
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = code.isNotBlank() && !isLoading
@@ -105,8 +138,22 @@ fun AuthScreen(
                     onClick = {
                         isLoading = true
                         errorMessage = null
-                        // TODO: Call UniFFI telegram_drive.check_password()
-                        onLoginComplete()
+                        coroutineScope.launch {
+                            try {
+                                val success = withContext(Dispatchers.IO) {
+                                    checkPassword(password)
+                                }
+                                if (success) {
+                                    onLoginComplete()
+                                } else {
+                                    errorMessage = "Invalid password"
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = e.message
+                            } finally {
+                                isLoading = false
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = password.isNotBlank() && !isLoading
