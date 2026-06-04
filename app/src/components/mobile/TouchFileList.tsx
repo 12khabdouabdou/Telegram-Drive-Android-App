@@ -1,10 +1,10 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { DownloadCloud, Trash2, Pencil, CheckSquare, X, Check, FolderInput, MoreVertical, Eye } from 'lucide-react';
+import { DownloadCloud, Trash2, Pencil, CheckSquare, X, Check, MoreVertical, Eye, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FileTypeIcon } from '../shared/FileTypeIcon';
 import { ActionPopover, ActionItem } from './ActionPopover';
-import { TelegramFile, TelegramFolder } from '../../types';
+import { TelegramFile } from '../../types';
 
 interface TouchFileListProps {
   files: TelegramFile[];
@@ -13,85 +13,151 @@ interface TouchFileListProps {
   onDelete: (file: TelegramFile) => void;
   onPreview: (file: TelegramFile) => void;
   onRename: (file: TelegramFile) => void;
+  onShare?: (file: TelegramFile) => void;
   selectedIds: number[];
   onToggleSelection: (id: number) => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
-  onBulkDelete: () => void;
-  onBulkDownload: () => void;
-  onBulkMove: (targetFolderId: number | null) => void;
-  folders: TelegramFolder[];
   fetchNextPage?: () => void;
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
-  activeFolderId: number | null;
 }
 
-export function TouchFileList({ files, isLoading, onDownload, onDelete, onPreview, onRename, selectedIds, onToggleSelection, onSelectAll, onClearSelection, onBulkDelete, onBulkDownload, onBulkMove, folders, activeFolderId }: TouchFileListProps) {
+export function TouchFileList({ files, isLoading, onDownload, onDelete, onPreview, onRename, onShare, selectedIds, onToggleSelection, onSelectAll, onClearSelection }: TouchFileListProps) {
   const [selectionMode, setSelectionMode] = useState(false);
-  const [showMovePicker, setShowMovePicker] = useState(false);
   const [actionMenuFile, setActionMenuFile] = useState<TelegramFile | null>(null);
   const isSelectionActive = selectionMode || selectedIds.length > 0;
 
-  // Long-press detection refs
+  // Swipe and Long-press state/refs
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressPosRef = useRef<{ x: number; y: number } | null>(null);
+  const swipingRowIdRef = useRef<number | null>(null);
   const LONG_PRESS_DURATION = 500;
 
-  // Long-press handlers — defined BEFORE any early returns to satisfy Rules of Hooks.
+  const [swipeOffsets, setSwipeOffsets] = useState<Map<number, number>>(new Map());
+  const [isSwipingMap, setIsSwipingMap] = useState<Map<number, boolean>>(new Map());
+
+  // Handlers
   const handlePointerDown = useCallback((e: React.PointerEvent, file: TelegramFile) => {
     if (isSelectionActive) return;
     longPressPosRef.current = { x: e.clientX, y: e.clientY };
+    swipingRowIdRef.current = file.id;
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    setIsSwipingMap(prev => {
+      const next = new Map(prev);
+      next.set(file.id, true);
+      return next;
+    });
+
     longPressTimerRef.current = setTimeout(() => {
       setSelectionMode(true);
       onToggleSelection(file.id);
       toast.info('Selection mode — tap files to select more');
+      swipingRowIdRef.current = null;
     }, LONG_PRESS_DURATION);
   }, [isSelectionActive, onToggleSelection]);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!longPressPosRef.current || !longPressTimerRef.current) return;
-    const dx = Math.abs(e.clientX - longPressPosRef.current.x);
-    const dy = Math.abs(e.clientY - longPressPosRef.current.y);
-    if (dx > 10 || dy > 10) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-      longPressPosRef.current = null;
-    }
-  }, []);
+  const handlePointerMove = useCallback((e: React.PointerEvent, file: TelegramFile) => {
+    if (!longPressPosRef.current) return;
+    
+    const dx = e.clientX - longPressPosRef.current.x;
+    const dy = e.clientY - longPressPosRef.current.y;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
 
-  const handlePointerUp = useCallback(() => {
+    if (absDx > 10 || absDy > 10) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+
+    if (swipingRowIdRef.current === file.id) {
+      if (absDx > absDy && absDx > 10) {
+        let newOffset = dx;
+        if (newOffset > 0 && !onShare) newOffset = 0; // block right swipe if no share
+        
+        setSwipeOffsets(prev => {
+          const next = new Map(prev);
+          next.set(file.id, Math.max(-100, Math.min(100, newOffset)));
+          return next;
+        });
+      }
+    }
+  }, [onShare]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent, file: TelegramFile) => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    
+    e.currentTarget.releasePointerCapture(e.pointerId);
+
+    if (swipingRowIdRef.current === file.id && longPressPosRef.current) {
+      const dx = e.clientX - longPressPosRef.current.x;
+      
+      if (dx < -60) {
+        onDelete(file);
+      } else if (dx > 60 && onShare) {
+        onShare(file);
+      }
+      
+      setSwipeOffsets(prev => {
+        const next = new Map(prev);
+        next.set(file.id, 0);
+        return next;
+      });
+    }
+
+    setIsSwipingMap(prev => {
+      const next = new Map(prev);
+      next.set(file.id, false);
+      return next;
+    });
+    
     longPressPosRef.current = null;
-  }, []);
+    swipingRowIdRef.current = null;
+  }, [onDelete, onShare]);
 
   // Build action items for a file's popover menu
-  const buildFileActions = useCallback((file: TelegramFile): ActionItem[] => [
-    {
-      label: 'Preview',
-      icon: <Eye className="w-4 h-4" />,
-      onClick: () => onPreview(file),
-    },
-    {
-      label: 'Download',
-      icon: <DownloadCloud className="w-4 h-4" />,
-      onClick: () => onDownload(file),
-    },
-    {
-      label: 'Rename',
-      icon: <Pencil className="w-4 h-4" />,
-      onClick: () => onRename(file),
-    },
-    {
+  const buildFileActions = useCallback((file: TelegramFile): ActionItem[] => {
+    const actions: ActionItem[] = [
+      {
+        label: 'Preview',
+        icon: <Eye className="w-4 h-4" />,
+        onClick: () => onPreview(file),
+      },
+      {
+        label: 'Download',
+        icon: <DownloadCloud className="w-4 h-4" />,
+        onClick: () => onDownload(file),
+      },
+      {
+        label: 'Rename',
+        icon: <Pencil className="w-4 h-4" />,
+        onClick: () => onRename(file),
+      },
+    ];
+
+    if (onShare && file.type !== 'folder') {
+      actions.push({
+        label: 'Share',
+        icon: <Share2 className="w-4 h-4" />,
+        onClick: () => onShare(file),
+      });
+    }
+
+    actions.push({
       label: 'Delete',
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => onDelete(file),
       destructive: true,
-    },
-  ], [onPreview, onDownload, onRename, onDelete]);
+    });
+
+    return actions;
+  }, [onPreview, onDownload, onRename, onDelete, onShare]);
 
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
   
@@ -171,83 +237,6 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
             )}
           </div>
 
-          {/* Batch action bar - visible when items are selected */}
-          {isSelectionActive && selectedIds.length > 0 && (
-            <div className="sticky top-0 z-10 flex items-center justify-center gap-3 p-3 mb-3 rounded-2xl bg-telegram-primary/10 border border-telegram-primary/20 backdrop-blur-md animate-in slide-in-from-top-2">
-              <button
-                onClick={onBulkDownload}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-telegram-primary/20 text-telegram-primary border border-telegram-primary/30 active:scale-95 transition-all duration-200"
-              >
-                <DownloadCloud className="w-3.5 h-3.5" />
-                Download ({selectedIds.length})
-              </button>
-              <button
-                onClick={() => setShowMovePicker(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 active:scale-95 transition-all duration-200"
-              >
-                <FolderInput className="w-3.5 h-3.5" />
-                Move ({selectedIds.length})
-              </button>
-              <button
-                onClick={onBulkDelete}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 active:scale-95 transition-all duration-200"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Delete ({selectedIds.length})
-              </button>
-            </div>
-          )}
-
-          {/* Move-to-folder picker modal */}
-          {showMovePicker && (
-            <div
-              className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-              onClick={() => setShowMovePicker(false)}
-            >
-              <div
-                className="bg-[#1c1c1c] border border-white/10 rounded-2xl p-5 w-[300px] max-h-[60vh] flex flex-col shadow-2xl"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-white">Move {selectedIds.length} file{selectedIds.length !== 1 ? 's' : ''} to...</h3>
-                  <button
-                    onClick={() => setShowMovePicker(false)}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-telegram-subtext"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-                  {/* Saved Messages */}
-                  <button
-                    onClick={() => { onBulkMove(null); setShowMovePicker(false); }}
-                    className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
-                      activeFolderId === null
-                        ? 'bg-telegram-primary/10 text-telegram-primary'
-                        : 'text-telegram-subtext hover:bg-white/5'
-                    }`}
-                  >
-                    📁 Saved Messages
-                  </button>
-                  {folders
-                    .filter(f => f.id !== activeFolderId)
-                    .map(folder => (
-                      <button
-                        key={folder.id}
-                        onClick={() => { onBulkMove(folder.id); setShowMovePicker(false); }}
-                        className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold text-telegram-subtext hover:bg-white/5 transition-all duration-200"
-                      >
-                        📁 {folder.name}
-                      </button>
-                    ))}
-                  {folders.filter(f => f.id !== activeFolderId).length === 0 && (
-                    <p className="text-xs text-telegram-subtext/60 text-center py-4">No other folders available</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* File list — virtualized for extreme performance on large folders */}
           <div 
             className="relative w-full pb-20"
@@ -256,6 +245,8 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const file = files[virtualItem.index];
               const isSelected = selectedIds.includes(file.id);
+              const swipeOffset = swipeOffsets.get(file.id) || 0;
+              const isSwiping = isSwipingMap.get(file.id) || false;
 
               return (
                 <div
@@ -270,60 +261,86 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
                     paddingBottom: '10px' // for spacing equivalent to space-y-2.5
                   }}
                 >
-                  <div
-                    onPointerDown={(e) => handlePointerDown(e, file)}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    onPointerCancel={handlePointerUp}
-                    onClick={() => {
-                      if (isSelectionActive) {
-                        onToggleSelection(file.id);
-                      } else {
-                        onPreview(file);
-                      }
-                    }}
-                    className={`h-full flex items-center justify-between p-3.5 rounded-2xl bg-telegram-hover/15 border transition-all duration-300 cursor-pointer active:scale-95 hover:shadow-md hover:bg-telegram-hover/30 ${
-                      isSelected ? 'border-telegram-primary/50 bg-telegram-primary/10' : 'border-telegram-border/20'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      {/* Selection checkbox in selection mode */}
-                      {isSelectionActive && (
-                        <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
-                          isSelected
-                            ? 'bg-telegram-primary border-telegram-primary text-black'
-                            : 'border-telegram-border/50 bg-transparent'
-                        }`}>
-                          {isSelected && <Check className="w-3.5 h-3.5" />}
-                        </div>
-                    )}
-                    <div className="flex-shrink-0">
-                      <FileTypeIcon filename={file.name} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-telegram-text truncate max-w-[150px] leading-snug">{file.name}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] text-telegram-subtext/80 font-medium font-mono">{file.sizeStr}</span>
-                        <span className="w-1 h-1 bg-telegram-border rounded-full" />
-                        <span className="text-[10px] text-telegram-subtext/80 font-medium">{file.created_at || 'Sync'}</span>
+                  <div className="relative w-full h-full overflow-hidden rounded-2xl">
+                    {/* Background swipe actions */}
+                    {swipeOffset !== 0 && (
+                      <div className={`absolute inset-0 flex justify-between ${swipeOffset > 0 ? 'bg-green-500' : 'bg-red-500'} ${Math.abs(swipeOffset) > 60 ? 'saturate-150' : 'opacity-80'}`}>
+                        {swipeOffset > 0 && onShare && (
+                          <div className="flex items-center justify-start px-5 w-1/2 text-white">
+                            <Share2 className="w-5 h-5 mr-2" />
+                            <span className="text-sm font-semibold">Share</span>
+                          </div>
+                        )}
+                        {swipeOffset < 0 && (
+                          <div className="flex items-center justify-end px-5 w-1/2 ml-auto text-white">
+                            <span className="text-sm font-semibold">Delete</span>
+                            <Trash2 className="w-5 h-5 ml-2" />
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* ⋮ menu button — replaces swipe gesture */}
-                  {!isSelectionActive && (
-                    <button
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActionMenuFile(file);
+                    {/* Main Row Content */}
+                    <div
+                      onPointerDown={(e) => handlePointerDown(e, file)}
+                      onPointerMove={(e) => handlePointerMove(e, file)}
+                      onPointerUp={(e) => handlePointerUp(e, file)}
+                      onPointerCancel={(e) => handlePointerUp(e, file)}
+                      onClick={() => {
+                        if (isSelectionActive) {
+                          onToggleSelection(file.id);
+                        } else {
+                          onPreview(file);
+                        }
                       }}
-                      className="flex-shrink-0 p-2 rounded-xl hover:bg-telegram-hover/40 active:bg-telegram-hover/60 text-telegram-subtext/60 hover:text-telegram-subtext transition-all duration-200"
-                      aria-label="File actions"
+                      style={{
+                        transform: `translateX(${swipeOffset}px)`,
+                        transition: isSwiping ? 'none' : 'transform 200ms ease-out',
+                        touchAction: 'pan-y'
+                      }}
+                      className={`relative z-10 h-full flex items-center justify-between p-3.5 rounded-2xl bg-telegram-hover border cursor-pointer active:scale-95 hover:shadow-md ${
+                        isSelected ? 'border-telegram-primary/50 bg-telegram-primary/10' : 'border-telegram-border/20 bg-telegram-bg'
+                      }`}
                     >
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-                  )}
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        {/* Selection checkbox in selection mode */}
+                        {isSelectionActive && (
+                          <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
+                            isSelected
+                              ? 'bg-telegram-primary border-telegram-primary text-black'
+                              : 'border-telegram-border/50 bg-transparent'
+                          }`}>
+                            {isSelected && <Check className="w-3.5 h-3.5" />}
+                          </div>
+                        )}
+                        <div className="flex-shrink-0">
+                          <FileTypeIcon filename={file.name} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-telegram-text truncate max-w-[150px] leading-snug">{file.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] text-telegram-subtext/80 font-medium font-mono">{file.sizeStr}</span>
+                            <span className="w-1 h-1 bg-telegram-border rounded-full" />
+                            <span className="text-[10px] text-telegram-subtext/80 font-medium">{file.created_at || 'Sync'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ⋮ menu button — replaces swipe gesture */}
+                      {!isSelectionActive && (
+                        <button
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActionMenuFile(file);
+                          }}
+                          className="flex-shrink-0 p-2 rounded-xl hover:bg-telegram-hover/40 active:bg-telegram-hover/60 text-telegram-subtext/60 hover:text-telegram-subtext transition-all duration-200"
+                          aria-label="File actions"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
