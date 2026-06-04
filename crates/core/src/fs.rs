@@ -318,7 +318,7 @@ pub async fn cmd_cancel_transfer(
 }
 
 pub async fn cmd_upload_file(
-    mut path: String,
+    path: String,
     folder_id: Option<i64>,
     transfer_id: Option<String>,
     progress_tx: Option<tokio::sync::mpsc::Sender<ProgressPayload>>,
@@ -422,7 +422,7 @@ async fn cmd_upload_file_inner(
     let progress_tid = tid.clone();
     
     let progress_counter = bytes_counter.clone();
-    let progress_tx = progress_tx.clone();
+    let progress_tx_clone = progress_tx.clone();
     let progress_task = if !tid.is_empty() {
         Some(tokio::spawn(async move {
             let mut last_bytes: u64 = 0;
@@ -443,7 +443,7 @@ async fn cmd_upload_file_inner(
                     0
                 };
 
-                if let Some(tx) = progress_tx.as_ref() { let _ = tx.send(ProgressPayload {
+                if let Some(tx) = progress_tx_clone.as_ref() { let _ = tx.send(ProgressPayload {
                         id: progress_tid.clone(),
                         percent,
                         uploaded_bytes: current,
