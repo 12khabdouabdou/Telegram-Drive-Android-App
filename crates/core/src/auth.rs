@@ -33,22 +33,6 @@ pub async fn ensure_client_initialized(
     proxy_username: String,
     proxy_password: String,
 ) -> Result<Client, String> {
-    #[cfg(target_os = "android")]
-    {
-        let mut count = 0;
-        while ndk_context::android_context().vm().is_null()
-            || ndk_context::android_context().context().is_null()
-        {
-            if count >= 200 {
-                return Err("Timeout waiting for Android JNI context initialization.".to_string());
-            }
-            log::info!("Waiting for Android JNI context to initialize ({}ms)...", count * 50);
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            count += 1;
-        }
-        log::info!("Android JNI context is ready!");
-    }
-
     let mut client_guard = state.client.lock().await;
 
     if let Some(client) = client_guard.as_ref() {

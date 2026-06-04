@@ -1,8 +1,8 @@
 use crate::bandwidth::BandwidthManager;
-use crate::commands::utils::{map_error, resolve_peer};
+use crate::utils::{map_error, resolve_peer};
 use crate::models::{FileMetadata, FolderMetadata};
 use crate::vpn_optimizer::{backoff_ms, NetworkConfig};
-use crate::TelegramState;
+use crate::telegram_state::TelegramState;
 use grammers_client::types::{Media, Peer};
 use grammers_client::InputMessage;
 use grammers_tl_types as tl;
@@ -719,7 +719,7 @@ pub async fn cmd_download_file(
             return Err("Transfer cancelled".to_string());
         }
 
-        let bytes = match chunk {
+        let bytes: Vec<u8> = match chunk {
             Ok(b) => {
                 chunk_retry_budget = net_config.retry_attempts(); // reset on success
                 b

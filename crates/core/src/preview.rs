@@ -1,6 +1,6 @@
 use crate::bandwidth::BandwidthManager;
-use crate::commands::utils::resolve_peer;
-use crate::TelegramState;
+use crate::utils::resolve_peer;
+use crate::telegram_state::TelegramState;
 use base64::{engine::general_purpose, Engine as _};
 use grammers_client::types::Media;
 
