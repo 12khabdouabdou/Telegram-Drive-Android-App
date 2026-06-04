@@ -29,3 +29,28 @@ pub struct TelegramState {
     /// in upload/download chunk loops. Cleared on logout.
     pub cancelled_transfers: Arc<tokio::sync::RwLock<HashSet<String>>>,
 }
+
+impl TelegramState {
+    /// Constructs a new, empty TelegramState. All mutex-guarded fields start as `None`,
+    /// the peer cache and cancelled-transfer set start empty, and the runner counter
+    /// starts at zero. Mirrors the inline construction previously used in
+    /// `app/src-tauri/src/lib.rs` so the new core crate can own the lifecycle.
+    pub fn new() -> Self {
+        Self {
+            client: Arc::new(Mutex::new(None)),
+            login_token: Arc::new(Mutex::new(None)),
+            password_token: Arc::new(Mutex::new(None)),
+            api_id: Arc::new(Mutex::new(None)),
+            runner_shutdown: Arc::new(std::sync::Mutex::new(None)),
+            runner_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            peer_cache: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            cancelled_transfers: Arc::new(tokio::sync::RwLock::new(HashSet::new())),
+        }
+    }
+}
+
+impl Default for TelegramState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
