@@ -1,0 +1,6 @@
+# UniFFI configuration for telegram_drive namespace
+# The cdylib_name must match the actual library name produced by cargo ndk.
+# Without this, UniFFI generates Kotlin that tries to load
+# "libuniffi_telegram_drive.so", which does not exist.
+
+cdylib_name = "telegram_drive_core"
