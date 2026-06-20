@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+.gradle/
+.idea/
+*.iml
+local.properties
+
+# Native libs (rebuilt from TDLib by scripts/build-tdlib-android.sh)
+app/src/main/jniLibs/
+app/libs/tdlib-java.jar
+
+# Keystore
+*.jks
+*.keystore
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Schemas (kept under version control for migrations)
+!app/schemas/

@@ -1,0 +1,12 @@
+# Telegram-Android local configuration
+# Copy this file to `local.properties` (already gitignored).
+#
+# Telegram API credentials (api_id, api_hash) are NOT required at build time.
+# They are entered inside the app at first-launch onboarding and stored
+# encrypted on the device. See .github/BUILDING_VIA_CI.md for the full flow.
+#
+# This file is only needed for local builds so Gradle can find the Android SDK.
+# Android Studio fills it in automatically when you open the project.
+
+# SDK location (set by Android Studio automatically)
+# sdk.dir=/home/USER/Android/Sdk

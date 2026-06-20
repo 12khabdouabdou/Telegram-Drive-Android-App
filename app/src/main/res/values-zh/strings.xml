@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Telegram Drive</string>
+    <string name="app_short_name">TG 云盘</string>
+    <string name="qs_tile_label">备份开关</string>
+
+    <string name="channel_transfer_name">传输</string>
+    <string name="channel_backup_name">自动备份</string>
+    <string name="channel_vault_name">保险箱提醒</string>
+    <string name="channel_general_name">通用</string>
+
+    <string name="nav_files">文件</string>
+    <string name="nav_photos">照片</string>
+    <string name="nav_backup">备份</string>
+    <string name="nav_vault">保险箱</string>
+    <string name="nav_chat">聊天</string>
+    <string name="nav_settings">设置</string>
+
+    <string name="action_upload">上传</string>
+    <string name="action_download">下载</string>
+    <string name="action_pause">暂停</string>
+    <string name="action_resume">继续</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_retry">重试</string>
+    <string name="action_delete">删除</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_move">移动</string>
+    <string name="action_share">分享</string>
+    <string name="action_settings">设置</string>
+    <string name="action_save">保存</string>
+    <string name="action_done">完成</string>
+    <string name="action_back">返回</string>
+    <string name="action_next">下一步</string>
+    <string name="action_skip">跳过</string>
+    <string name="action_get_started">开始使用</string>
+    <string name="action_grant">授予权限</string>
+
+    <string name="onboarding_welcome_title">欢迎使用 Telegram Drive</string>
+    <string name="onboarding_welcome_subtitle">用你的 Telegram 账号获得无限免费云存储。</string>
+    <string name="onboarding_permissions_title">允许访问你的媒体</string>
+    <string name="onboarding_permissions_subtitle">我们需要访问照片和视频以自动备份。文件在上传前会在本地加密。</string>
+    <string name="onboarding_credentials_title">输入你的 Telegram API 凭证</string>
+    <string name="onboarding_credentials_subtitle">每个用户都需要在 my.telegram.org/apps 注册自己的应用。我们只在此设备上加密存储 —— 绝不会上传到任何地方。</string>
+    <string name="onboarding_credentials_apiid_hint">App api_id（数字）</string>
+    <string name="onboarding_credentials_apihash_hint">App api_hash</string>
+    <string name="onboarding_credentials_save">保存并继续</string>
+    <string name="onboarding_login_title">登录 Telegram</string>
+    <string name="onboarding_login_subtitle">输入你的手机号，我们会通过 Telegram 应用发送验证码。</string>
+    <string name="onboarding_backup_title">开启自动备份</string>
+    <string name="onboarding_backup_subtitle">当条件满足时，新的照片和视频将自动备份。</string>
+
+    <string name="login_phone_hint">手机号</string>
+    <string name="login_code_hint">验证码</string>
+    <string name="login_password_hint">两步验证密码</string>
+    <string name="login_request_code">发送验证码</string>
+    <string name="login_verify_code">验证</string>
+    <string name="login_verify_password">解锁</string>
+    <string name="login_logout">退出登录</string>
+    <string name="login_add_account">添加账号</string>
+
+    <string name="files_empty">此处还没有文件</string>
+    <string name="files_empty_subtitle">点击 + 从你的设备上传文件。</string>
+
+    <string name="photos_title">照片</string>
+    <string name="photos_empty">还没有已备份的照片</string>
+    <string name="photos_today">今天</string>
+    <string name="photos_yesterday">昨天</string>
+    <string name="photos_free_up_space">释放空间</string>
+
+    <string name="backup_status_idle">已是最新</string>
+    <string name="backup_status_running">正在备份 %1$d / %2$d</string>
+    <string name="backup_status_paused">已暂停</string>
+    <string name="backup_status_disabled">已关闭</string>
+    <string name="backup_rules_title">备份规则</string>
+    <string name="backup_condition_wifi">仅在 Wi-Fi 下</string>
+    <string name="backup_condition_charging">仅在充电时</string>
+    <string name="backup_dedup">跳过重复文件</string>
+    <string name="backup_original_quality">保留原始质量</string>
+    <string name="backup_storage_saver">备份后释放本地空间</string>
+
+    <string name="vault_title">保险箱</string>
+    <string name="vault_locked">保险箱已锁定</string>
+    <string name="vault_unlock">解锁保险箱</string>
+    <string name="vault_autolock">自动锁定</string>
+
+    <string name="chat_title">Telegram</string>
+    <string name="chat_self">已保存的消息</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_accounts">账号</string>
+    <string name="settings_storage">存储</string>
+    <string name="settings_security">安全与隐私</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_dynamic_color">动态取色</string>
+    <string name="settings_dark_mode">深色模式</string>
+    <string name="settings_language">语言</string>
+
+    <string name="storage_used">已用 %1$s</string>
+    <string name="storage_total">总计 %1$s</string>
+    <string name="storage_free">可用 %1$s</string>
+
+    <string name="error_network">无网络连接</string>
+    <string name="error_auth">Telegram 认证失败</string>
+    <string name="error_file_too_large">文件超过 Telegram 2 GB 限制</string>
+
+    <string name="widget_backup_title">备份状态</string>
+    <string name="widget_backup_uptodate">已是最新</string>
+
+    <string name="loading">加载中…</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+</resources>

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Telegram Drive</string>
+    <string name="app_short_name">TG Drive</string>
+    <string name="qs_tile_label">Copia de seguridad</string>
+
+    <string name="channel_transfer_name">Transferencias</string>
+    <string name="channel_backup_name">Copia automática</string>
+    <string name="channel_vault_name">Alertas de la caja fuerte</string>
+    <string name="channel_general_name">General</string>
+
+    <string name="nav_files">Archivos</string>
+    <string name="nav_photos">Fotos</string>
+    <string name="nav_backup">Copia</string>
+    <string name="nav_vault">Caja fuerte</string>
+    <string name="nav_chat">Chat</string>
+    <string name="nav_settings">Ajustes</string>
+
+    <string name="action_upload">Subir</string>
+    <string name="action_download">Descargar</string>
+    <string name="action_pause">Pausar</string>
+    <string name="action_resume">Reanudar</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_retry">Reintentar</string>
+    <string name="action_delete">Eliminar</string>
+    <string name="action_rename">Renombrar</string>
+    <string name="action_move">Mover</string>
+    <string name="action_share">Compartir</string>
+    <string name="action_settings">Ajustes</string>
+    <string name="action_save">Guardar</string>
+    <string name="action_done">Listo</string>
+    <string name="action_back">Atrás</string>
+    <string name="action_next">Siguiente</string>
+    <string name="action_skip">Omitir</string>
+    <string name="action_get_started">Comenzar</string>
+    <string name="action_grant">Permitir acceso</string>
+
+    <string name="onboarding_welcome_title">Te damos la bienvenida a Telegram Drive</string>
+    <string name="onboarding_welcome_subtitle">Almacenamiento en la nube ilimitado y gratuito con tu cuenta de Telegram.</string>
+    <string name="onboarding_permissions_title">Permite el acceso a tus medios</string>
+    <string name="onboarding_permissions_subtitle">Necesitamos acceso a fotos y videos para hacer la copia automática. Los archivos se cifran en el dispositivo antes de subirlos.</string>
+    <string name="onboarding_credentials_title">Introduce tus credenciales de Telegram</string>
+    <string name="onboarding_credentials_subtitle">Cada usuario debe registrar su app en my.telegram.org/apps. Las guardamos cifradas solo en este dispositivo — nunca se suben a ningún sitio.</string>
+    <string name="onboarding_credentials_apiid_hint">App api_id (número)</string>
+    <string name="onboarding_credentials_apihash_hint">App api_hash</string>
+    <string name="onboarding_credentials_save">Guardar y continuar</string>
+    <string name="onboarding_login_title">Inicia sesión en Telegram</string>
+    <string name="onboarding_login_subtitle">Escribe tu número de teléfono. Te enviaremos un código por la app de Telegram.</string>
+    <string name="onboarding_backup_title">Activa la copia automática</string>
+    <string name="onboarding_backup_subtitle">Las fotos y videos nuevos se copiarán automáticamente cuando se cumplan las condiciones.</string>
+
+    <string name="login_phone_hint">Número de teléfono</string>
+    <string name="login_code_hint">Código de verificación</string>
+    <string name="login_password_hint">Contraseña de dos pasos</string>
+    <string name="login_request_code">Enviar código</string>
+    <string name="login_verify_code">Verificar</string>
+    <string name="login_verify_password">Desbloquear</string>
+    <string name="login_logout">Cerrar sesión</string>
+    <string name="login_add_account">Añadir cuenta</string>
+
+    <string name="files_empty">No hay archivos aquí todavía</string>
+    <string name="files_empty_subtitle">Toca + para subir archivos desde tu dispositivo.</string>
+
+    <string name="photos_title">Fotos</string>
+    <string name="photos_empty">Aún no hay fotos copiadas</string>
+    <string name="photos_today">Hoy</string>
+    <string name="photos_yesterday">Ayer</string>
+    <string name="photos_free_up_space">Liberar espacio</string>
+
+    <string name="backup_status_idle">Todo al día</string>
+    <string name="backup_status_running">Copiando %1$d de %2$d</string>
+    <string name="backup_status_paused">En pausa</string>
+    <string name="backup_status_disabled">Desactivado</string>
+    <string name="backup_rules_title">Reglas de copia</string>
+    <string name="backup_condition_wifi">Solo con Wi-Fi</string>
+    <string name="backup_condition_charging">Solo al cargar</string>
+    <string name="backup_dedup">Omitir duplicados</string>
+    <string name="backup_original_quality">Mantener calidad original</string>
+    <string name="backup_storage_saver">Liberar espacio local tras la copia</string>
+
+    <string name="vault_title">Caja fuerte</string>
+    <string name="vault_locked">La caja fuerte está bloqueada</string>
+    <string name="vault_unlock">Desbloquear caja fuerte</string>
+    <string name="vault_autolock">Bloqueo automático</string>
+
+    <string name="chat_title">Telegram</string>
+    <string name="chat_self">Mensajes guardados</string>
+
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_accounts">Cuentas</string>
+    <string name="settings_storage">Almacenamiento</string>
+    <string name="settings_security">Seguridad y privacidad</string>
+    <string name="settings_about">Acerca de</string>
+    <string name="settings_theme">Tema</string>
+    <string name="settings_dynamic_color">Color dinámico</string>
+    <string name="settings_dark_mode">Modo oscuro</string>
+    <string name="settings_language">Idioma</string>
+
+    <string name="storage_used">%1$s usados</string>
+    <string name="storage_total">%1$s en total</string>
+    <string name="storage_free">%1$s libres</string>
+
+    <string name="error_network">Sin conexión a internet</string>
+    <string name="error_auth">Falló la autenticación de Telegram</string>
+    <string name="error_file_too_large">El archivo supera el límite de 2 GB de Telegram</string>
+
+    <string name="widget_backup_title">Estado de la copia</string>
+    <string name="widget_backup_uptodate">Todo al día</string>
+
+    <string name="loading">Cargando…</string>
+    <string name="ok">Aceptar</string>
+    <string name="cancel">Cancelar</string>
+</resources>

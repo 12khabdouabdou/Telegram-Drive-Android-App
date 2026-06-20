@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TelegramDrive.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/brand_surface_dark</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/brand_primary</item>
+        <item name="postSplashScreenTheme">@style/Theme.TelegramDrive.Dark</item>
+    </style>
+</resources>

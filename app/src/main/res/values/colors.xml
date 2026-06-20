@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base palette — overridden at runtime by Material You dynamic color -->
+    <color name="brand_primary">#2AABEE</color>
+    <color name="brand_primary_dark">#0088CC</color>
+    <color name="brand_secondary">#229ED9</color>
+    <color name="brand_surface">#FAFBFC</color>
+    <color name="brand_surface_dark">#101418</color>
+    <color name="brand_error">#BA1A1A</color>
+    <color name="ic_launcher_background">#2AABEE</color>
+
+    <!-- Backup status -->
+    <color name="status_success">#1F8B4C</color>
+    <color name="status_warning">#F5A623</color>
+    <color name="status_error">#D0021B</color>
+    <color name="status_idle">#7E8B95</color>
+</resources>
