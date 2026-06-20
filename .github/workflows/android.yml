@@ -1,92 +1,96 @@
-name: Android Build
+name: Build APK
+
+# Builds TDLib from source for 4 ABIs, then assembles the debug APK,
+# then uploads it as a downloadable artifact attached to the workflow run.
+#
+# Telegram API credentials are NOT needed at build time — they are entered
+# by the user inside the app at first-launch onboarding and stored encrypted
+# on-device. The same APK works for any user's credentials.
+#
+# First run: ~25-30 minutes (TDLib compilation across 4 ABIs).
+# Subsequent runs: ~5-8 minutes (cached TDLib .so files).
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch: # manual trigger from the Actions tab
 
 jobs:
-  build-android:
+  build:
+    name: Build Debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout app source
+        uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup Java
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          packages: |
+            platforms;android-34
+            build-tools;34.0.0
+            cmake;3.22.1
+            ndk;26.3.11579264
 
-      - name: Install NDK
-        run: sdkmanager "ndk;25.2.9519653" "build-tools;33.0.0" "platforms;android-33"
+      - name: Cache TDLib build outputs
+        uses: actions/cache@v4
+        id: tdlib-cache
+        with:
+          path: app/src/main/jniLibs
+          key: tdlib-${{ runner.os }}-v1.8.20-${{ hashFiles('scripts/build-tdlib-android.sh') }}
 
-      - name: Set Environment Variables
+      - name: Checkout TDLib source
+        if: steps.tdlib-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: tdlib/td
+          ref: v1.8.20
+          path: tdlib-src
+
+      - name: Build TDLib for Android (4 ABIs)
+        if: steps.tdlib-cache.outputs.cache-hit != 'true'
         run: |
-          echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          chmod +x scripts/build-tdlib-android.sh
+          ./scripts/build-tdlib-android.sh
+        env:
+          ANDROID_NDK_HOME: $ANDROID_HOME/ndk/26.3.11579264
+          ANDROID_NDK_ROOT: $ANDROID_HOME/ndk/26.3.11579264
+          TDLIB_SRC_DIR: $GITHUB_WORKSPACE/tdlib-src
+          TDLIB_OUT_DIR: $GITHUB_WORKSPACE/app/src/main/jniLibs
 
-      - name: Install Frontend Dependencies
-        working-directory: app
-        run: npm install
-
-      - name: Initialize Tauri Android
-        working-directory: app
-        run: npm run tauri android init
-
-      - name: Patch AndroidManifest for Auto-Backup
-        working-directory: app/src-tauri/gen/android/app/src/main
+      - name: Generate local.properties (sdk.dir only — no API credentials needed at build time)
         run: |
-          sed -i '/<uses-permission android:name="android.permission.INTERNET"/a \
-          <uses-permission android:name="android.permission.FOREGROUND_SERVICE" \/>\n\
-          <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" \/>\n\
-          <uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/>\n\
-          <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" \/>\n\
-          <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" \/>\n\
-          <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" \/>' AndroidManifest.xml
-          
-          sed -i '/<\/application>/i \
-          <service android:name=".AutoBackupService" android:foregroundServiceType="dataSync" android:exported="false" \/>' AndroidManifest.xml
-          
-          # Add Intent Filter to MainActivity for Share to App
-          sed -i '/<activity android:name=".MainActivity"/,/<\/activity>/ s/<\/activity>/\
-            <intent-filter>\
-                <action android:name="android.intent.action.SEND" \/>\
-                <category android:name="android.intent.category.DEFAULT" \/>\
-                <data android:mimeType="*\/*" \/>\
-            <\/intent-filter>\
-            <intent-filter>\
-                <action android:name="android.intent.action.SEND_MULTIPLE" \/>\
-                <category android:name="android.intent.category.DEFAULT" \/>\
-                <data android:mimeType="*\/*" \/>\
-            <\/intent-filter>\
-          <\/activity>/' AndroidManifest.xml
+          cat > local.properties <<EOF
+          sdk.dir=$ANDROID_HOME
+          EOF
 
-      - name: Build Android APK
-        working-directory: app
-        run: npm run tauri android build
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
-      - name: Sign APK
-        run: |
-          keytool -genkey -v -keystore release.keystore -alias androidkey -storepass android123 -keypass android123 -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=TelegramDrive, CN=TelegramDrive"
-          $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:android123 --key-pass pass:android123 --in app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk --out app-universal-release-signed.apk
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Telegram-Drive-Signed-APK
-          path: app-universal-release-signed.apk
-          if-no-files-found: warn
+          name: telegram-drive-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Print artifact download URL
+        run: |
+          echo "::notice::APK built! Download it from:"
+          echo "::notice::https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "::notice::Look for the 'telegram-drive-debug-apk' artifact at the bottom of the run page."
+          echo "::notice::On first launch, the app will ask you to enter your Telegram API credentials (from my.telegram.org/apps)."
