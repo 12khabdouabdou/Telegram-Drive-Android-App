@@ -47,14 +47,14 @@ jobs:
         id: tdlib-cache
         with:
           path: app/src/main/jniLibs
-          key: tdlib-1.8.20-${{ hashFiles('scripts/build-tdlib-android.sh') }}
+          key: tdlib-1.8.0-${{ hashFiles('scripts/build-tdlib-android.sh') }}
 
       - name: Checkout TDLib source
         if: steps.tdlib-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: tdlib/td
-          ref: v1.8.20
+          ref: v1.8.0
           path: tdlib-src
 
       - name: Build TDLib for Android (4 ABIs)
