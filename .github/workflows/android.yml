@@ -1,21 +1,19 @@
 name: Build APK
 
-# Builds TDLib from source for 4 ABIs, then assembles the debug APK,
-# then uploads it as a downloadable artifact attached to the workflow run.
-#
-# Telegram API credentials are NOT needed at build time — they are entered
-# by the user inside the app at first-launch onboarding and stored encrypted
-# on-device. The same APK works for any user's credentials.
-#
-# First run: ~25-30 minutes (TDLib compilation across 4 ABIs).
-# Subsequent runs: ~5-8 minutes (cached TDLib .so files).
-
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   pull_request:
-    branches: [main, master]
-  workflow_dispatch: # manual trigger from the Actions tab
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -36,18 +34,20 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platforms;android-34
-            build-tools;34.0.0
-            cmake;3.22.1
-            ndk;26.3.11579264
+          packages: 'platforms;android-34 build-tools;34.0.0 cmake;3.22.1 ndk;26.3.11579264'
+
+      - name: Print SDK paths
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/ndk/" || true
+          ls -la "$ANDROID_HOME/cmake/" || true
 
       - name: Cache TDLib build outputs
         uses: actions/cache@v4
         id: tdlib-cache
         with:
           path: app/src/main/jniLibs
-          key: tdlib-${{ runner.os }}-v1.8.20-${{ hashFiles('scripts/build-tdlib-android.sh') }}
+          key: tdlib-1.8.20-${{ hashFiles('scripts/build-tdlib-android.sh') }}
 
       - name: Checkout TDLib source
         if: steps.tdlib-cache.outputs.cache-hit != 'true'
@@ -68,11 +68,8 @@ jobs:
           TDLIB_SRC_DIR: $GITHUB_WORKSPACE/tdlib-src
           TDLIB_OUT_DIR: $GITHUB_WORKSPACE/app/src/main/jniLibs
 
-      - name: Generate local.properties (sdk.dir only — no API credentials needed at build time)
-        run: |
-          cat > local.properties <<EOF
-          sdk.dir=$ANDROID_HOME
-          EOF
+      - name: Generate local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
@@ -88,9 +85,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Print artifact download URL
+      - name: Print download URL
         run: |
-          echo "::notice::APK built! Download it from:"
+          echo "::notice::APK built! Download from:"
           echo "::notice::https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo "::notice::Look for the 'telegram-drive-debug-apk' artifact at the bottom of the run page."
-          echo "::notice::On first launch, the app will ask you to enter your Telegram API credentials (from my.telegram.org/apps)."
