@@ -19,7 +19,7 @@ jobs:
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout app source
@@ -36,18 +36,25 @@ jobs:
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 cmake;3.22.1 ndk;26.3.11579264'
 
-      - name: Print SDK paths
+      - name: Install native build deps
         run: |
+          sudo apt-get update
+          sudo apt-get install -y gperf zlib1g-dev zlib1g-dev:i386 libssl-dev
+
+      - name: Print environment
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
           echo "ANDROID_HOME=$ANDROID_HOME"
           ls -la "$ANDROID_HOME/ndk/" || true
-          ls -la "$ANDROID_HOME/cmake/" || true
 
       - name: Cache TDLib build outputs
         uses: actions/cache@v4
         id: tdlib-cache
         with:
-          path: app/src/main/jniLibs
-          key: tdlib-1.8.0-${{ hashFiles('scripts/build-tdlib-android.sh') }}
+          path: |
+            app/src/main/jniLibs
+            app/libs/tdlib-java.jar
+          key: tdlib-1.8.0-v2-${{ hashFiles('scripts/build-tdlib-android.sh') }}
 
       - name: Checkout TDLib source
         if: steps.tdlib-cache.outputs.cache-hit != 'true'
@@ -63,10 +70,16 @@ jobs:
           chmod +x scripts/build-tdlib-android.sh
           ./scripts/build-tdlib-android.sh
         env:
-          ANDROID_NDK_HOME: $ANDROID_HOME/ndk/26.3.11579264
-          ANDROID_NDK_ROOT: $ANDROID_HOME/ndk/26.3.11579264
-          TDLIB_SRC_DIR: $GITHUB_WORKSPACE/tdlib-src
-          TDLIB_OUT_DIR: $GITHUB_WORKSPACE/app/src/main/jniLibs
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+          TDLIB_SRC_DIR: ${{ github.workspace }}/tdlib-src
+          TDLIB_OUT_DIR: ${{ github.workspace }}/app/src/main/jniLibs
+          TDLIB_JAR_OUT: ${{ github.workspace }}/app/libs/tdlib-java.jar
+
+      - name: Verify TDLib outputs
+        run: |
+          find app/src/main/jniLibs -type f -name '*.so' -exec ls -lh {} \;
+          ls -lh app/libs/tdlib-java.jar || exit 1
 
       - name: Generate local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
@@ -89,4 +102,3 @@ jobs:
         run: |
           echo "::notice::APK built! Download from:"
           echo "::notice::https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo "::notice::Look for the 'telegram-drive-debug-apk' artifact at the bottom of the run page."
